@@ -12,6 +12,10 @@ Whole Building Design Guide (WBDG) criteria, and agency overrides.
 | [`skills/whole-building-design-guide`](skills/whole-building-design-guide) | WBDG / NBIMS-US lookup workflow, BEP outline, ISO 9001 clause alignment. |
 | [`skills/ios-numbers-spreadsheets`](skills/ios-numbers-spreadsheets) | Round-trip spreadsheets with Apple Numbers on iPhone/iPad: read `.numbers`/Excel/CSV returns and diff them. |
 
+The web app is published to GitHub Pages at
+<https://imatthewtanner.github.io/bep-builder/> on every push to `master` that changes
+`app/` (`.github/workflows/pages.yml`).
+
 ## Quick start (CLI)
 
 ```bash
