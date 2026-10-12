@@ -1,0 +1,8 @@
+{
+  "skill_name": "ios-numbers-spreadsheets",
+  "evals": [
+    {"id": 1, "prompt": "I edited the BEP maps sheet on my iPhone in Numbers — here's the file back (maps-edited-on-phone.numbers). What did I change, and can you put it into the barracks plan?", "expected_output": "Reads .numbers via setup_numbers.sh python, diffs against original with keys, summarizes 3 use changes + 2 added exchanges in plain words, runs apply-maps --dry-run and asks before saving", "files": ["maps.xlsx", "maps-edited-on-phone.numbers", "barracks.json"]},
+    {"id": 2, "prompt": "make me a punch list spreadsheet I can update from my phone on site", "expected_output": "xlsx with one table per sheet at A1, single header row, stable IDs, highlighted input cells, Read Me; plus phone steps to open/edit/send back as Numbers or Excel (One per Sheet)", "files": []},
+    {"id": 3, "prompt": "Numbers exported it as Excel one per table, here it is", "expected_output": "Handles renamed '… - Table 1' worksheets and skips Export Summary; reports changes", "files": ["original.xlsx", "edited-one-per-table.xlsx"]}
+  ]
+}

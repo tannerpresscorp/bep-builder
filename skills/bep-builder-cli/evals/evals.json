@@ -1,0 +1,25 @@
+{
+  "skill_name": "bep-builder-cli",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Start a BEP for our new USACE barracks at an Army installation in Texas. Design-build, we're in schematic design. I'm the BIM manager (Alex Morgan, Example Architects). MEP is Example Engineers, lead is Sam Lee. We'll do design authoring, clash detection weekly in Navisworks, and COBie at turnover. Everyone's on Revit 2026. No CUI. Export it so I can send it around.",
+      "expected_output": "plan.json created with agency usace, cui no, team, uses with parties, tech rows, clash check configured; Markdown export with USACE overrides section and TODOs for unknowns; nothing invented",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "can you check these against NCS: A-WALL, a-door, E-LITE-EMRG, M_HVAC, S501, A-101, AD-101, G-ANNO-NPLT, A-WALL-FULL-PATT-TEXT",
+      "expected_output": "check-names table with plain-language fixes",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "I exported our plan from the BEP Builder app (attached plan-from-app.json). What's still missing before we can issue it?",
+      "expected_output": "validate run on the wrapped app document; missing items summarized in plain language grouped by section",
+      "files": [
+        "plan-from-app.json"
+      ]
+    }
+  ]
+}

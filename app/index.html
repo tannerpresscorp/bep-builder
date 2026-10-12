@@ -1,0 +1,1176 @@
+<title>BIM Execution Plan Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a drawing-set title block across the top, a sheet index on the left, one sheet (BEP section) open at a time. */
+:root {
+  --paper: #eef2f1;
+  --sheet: #ffffff;
+  --ink: #16212a;
+  --muted: #56646e;
+  --line: #d3dbd9;
+  --line-strong: #9fb0ad;
+  --accent: #0b6b66;
+  --accent-soft: #e0efed;
+  --redline: #c2361f;
+  --redline-soft: #fbe9e5;
+  --ok: #2c7a4d;
+  --warn: #9a6a12;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0e1418; --sheet: #151d22; --ink: #e2e9ec; --muted: #94a3ab;
+    --line: #27333a; --line-strong: #46565e; --accent: #4fb5ab; --accent-soft: #15302e;
+    --redline: #f07560; --redline-soft: #3a1d18; --ok: #6cc391; --warn: #e0b45a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0e1418; --sheet: #151d22; --ink: #e2e9ec; --muted: #94a3ab;
+  --line: #27333a; --line-strong: #46565e; --accent: #4fb5ab; --accent-soft: #15302e;
+  --redline: #f07560; --redline-soft: #3a1d18; --ok: #6cc391; --warn: #e0b45a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { background: var(--paper); color: var(--ink); font: 15px/1.55 var(--body); }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 48px; display: grid; gap: 18px; }
+
+/* Title block */
+.titleblock { border: 2px solid var(--ink); background: var(--sheet); display: grid; grid-template-columns: 1.6fr 1fr 1fr 0.7fr; }
+.tb-cell { padding: 10px 14px; border-right: 1px solid var(--ink); min-width: 0; }
+.tb-cell:last-child { border-right: 0; }
+.tb-label { font: 600 10.5px/1.2 var(--display); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.tb-value { font: 600 17px/1.3 var(--display); text-transform: uppercase; letter-spacing: .02em; margin-top: 4px; overflow-wrap: anywhere; }
+.tb-value.big { font-size: 22px; }
+.tb-sheet { text-align: center; }
+.tb-sheet .tb-value { font: 600 26px/1.1 var(--mono); }
+.tb-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.syncdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); margin-right: 6px; vertical-align: 1px; }
+.syncdot.live { background: var(--ok); }
+.syncdot.busy { background: var(--warn); }
+.syncdot.off { background: var(--redline); }
+
+.banner { border: 1px solid var(--line-strong); background: var(--sheet); padding: 10px 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+.banner.alert { border-color: var(--redline); background: var(--redline-soft); }
+
+/* Body */
+.layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 18px; align-items: start; }
+.index { background: var(--sheet); border: 1px solid var(--line); position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
+.index h2 { font: 600 11px/1 var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 0; padding: 12px 14px 8px; }
+.index ol { list-style: none; margin: 0; padding: 0 0 6px; }
+.index button { width: 100%; display: grid; grid-template-columns: 34px 1fr auto; gap: 8px; align-items: center; text-align: left; background: none; border: 0; border-left: 3px solid transparent; padding: 8px 12px 8px 11px; color: var(--ink); font: 500 14px/1.3 var(--body); cursor: pointer; }
+.index button:hover { background: var(--accent-soft); }
+.index button[aria-current="step"] { border-left-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.index .code { font: 500 12px/1 var(--mono); color: var(--muted); }
+.pip { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--line-strong); }
+.pip.partial { border-color: var(--warn); background: linear-gradient(90deg, var(--warn) 50%, transparent 50%); }
+.pip.done { border-color: var(--ok); background: var(--ok); }
+.progress { padding: 10px 14px 14px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+.bar { height: 6px; background: var(--line); margin-top: 6px; }
+.bar > i { display: block; height: 100%; background: var(--accent); }
+
+.sheet { background: var(--sheet); border: 1px solid var(--line); padding: 26px 28px 30px; min-width: 0; display: grid; gap: 22px; align-content: start; }
+.sheet-head { display: grid; gap: 6px; border-bottom: 2px solid var(--ink); padding-bottom: 14px; }
+.eyebrow { font: 600 11.5px/1 var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--accent); display: flex; gap: 10px; flex-wrap: wrap; }
+.eyebrow .iso { color: var(--muted); }
+.sheet h1 { font: 700 30px/1.1 var(--display); text-transform: uppercase; letter-spacing: .01em; margin: 0; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); max-width: 68ch; }
+
+h3 { font: 600 13px/1.2 var(--display); letter-spacing: .1em; text-transform: uppercase; margin: 0; }
+.block { display: grid; gap: 12px; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 18px; }
+.field { display: grid; gap: 5px; min-width: 0; }
+.field label, .lbl { font: 600 12px/1.2 var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.hint { font-size: 12.5px; color: var(--muted); margin: 0; }
+input[type=text], input[type=email], input[type=date], select, textarea {
+  width: 100%; font: 400 14.5px/1.4 var(--body); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-strong); border-radius: 2px; padding: 8px 10px; min-width: 0;
+}
+textarea { min-height: 76px; resize: vertical; }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+input:disabled, select:disabled, textarea:disabled { opacity: .75; cursor: not-allowed; }
+
+.btn { font: 600 13px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; border: 1.5px solid var(--ink); background: var(--sheet); color: var(--ink); padding: 10px 14px; cursor: pointer; border-radius: 2px; }
+.btn:hover { background: var(--accent-soft); }
+.btn.primary { background: var(--ink); color: var(--sheet); }
+.btn.primary:hover { background: var(--accent); border-color: var(--accent); }
+.btn.small { padding: 7px 10px; font-size: 11.5px; }
+.btn.ghost { border-color: var(--line-strong); }
+.btn.danger { border-color: var(--redline); color: var(--redline); }
+.icon-btn { border: 0; background: none; color: var(--muted); cursor: pointer; font: 500 18px/1 var(--body); padding: 6px 8px; }
+.icon-btn:hover { color: var(--redline); }
+.row-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th { font: 600 11.5px/1.2 var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); text-align: left; padding: 8px 10px; border-bottom: 1.5px solid var(--line-strong); background: var(--paper); white-space: nowrap; }
+td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td input, td select { background: var(--sheet); padding: 6px 8px; }
+.edit-table td { min-width: 130px; }
+.edit-table td.tight { min-width: 0; width: 1%; }
+tbody tr:last-child td { border-bottom: 0; }
+.mono { font-family: var(--mono); font-size: 13px; }
+
+.uses { display: grid; gap: 10px; }
+.use { border: 1px solid var(--line); display: grid; grid-template-columns: auto minmax(0,1fr); gap: 4px 12px; padding: 12px 14px; }
+.use.on { border-color: var(--accent); background: var(--accent-soft); }
+.use input[type=checkbox] { width: 18px; height: 18px; margin-top: 3px; accent-color: var(--accent); }
+.use-name { font-weight: 600; }
+.use-meta { font-size: 12.5px; color: var(--muted); }
+.use-detail { grid-column: 2; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; margin-top: 8px; }
+.tag { display: inline-block; font: 500 11px/1 var(--mono); padding: 4px 6px; border: 1px solid var(--line-strong); color: var(--muted); margin-left: 6px; vertical-align: 1px; }
+a { color: var(--accent); }
+
+.callout { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 12px 14px; display: grid; gap: 6px; font-size: 14px; }
+.callout.usace { border-left-color: var(--warn); }
+.callout ul { margin: 0; padding-left: 18px; }
+.callout p { margin: 0; }
+
+.choice { display: flex; gap: 8px; flex-wrap: wrap; }
+.choice label { display: flex; gap: 8px; align-items: flex-start; border: 1px solid var(--line-strong); padding: 9px 12px; cursor: pointer; font-size: 14px; flex: 1 1 200px; }
+.choice label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.choice input { accent-color: var(--accent); margin-top: 3px; }
+.choice small { display: block; color: var(--muted); font-size: 12.5px; }
+.code-ex { font: 500 13px/1 var(--mono); }
+
+.check-ok { color: var(--ok); font-weight: 600; }
+.check-bad { color: var(--redline); font-weight: 600; }
+
+.qc-rule { display: grid; grid-template-columns: auto minmax(0, 1fr) 150px 140px; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.qc-rule:last-child { border-bottom: 0; }
+.qc-rule input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); }
+.qc-rule .txt { font-size: 14px; }
+
+.nav { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 16px; }
+
+/* Review / document preview */
+.doc { border: 1px solid var(--line-strong); padding: 26px 28px; background: var(--sheet); display: grid; gap: 14px; }
+.doc h2 { font: 700 22px/1.2 var(--display); text-transform: uppercase; margin: 0; }
+.doc h3 { font-size: 15px; margin-top: 10px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.doc p { margin: 0; max-width: 72ch; }
+.doc ul { margin: 0; padding-left: 20px; }
+.todo { color: var(--redline); background: var(--redline-soft); padding: 1px 5px; font-weight: 600; }
+.isotag { font: 500 11.5px/1.4 var(--mono); color: var(--muted); }
+.stats { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14px; }
+.stats b { font: 600 22px/1 var(--mono); display: block; font-variant-numeric: tabular-nums; }
+
+.confirm { border: 1.5px solid var(--redline); padding: 12px 14px; display: grid; gap: 10px; background: var(--redline-soft); }
+.toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); transform: translateX(-50%); background: var(--ink); color: var(--sheet); padding: 10px 16px; font-size: 14px; border-radius: 2px; z-index: 10; max-width: calc(100% - 32px); }
+
+@media (max-width: 860px) {
+  .layout { grid-template-columns: minmax(0,1fr); }
+  .index { position: static; }
+  .index ol { display: flex; overflow-x: auto; padding: 0 6px 8px; gap: 2px; }
+  .index li { flex: 0 0 auto; }
+  .index button { grid-template-columns: auto auto auto; border-left: 0; border-bottom: 3px solid transparent; padding: 8px 10px; white-space: nowrap; }
+  .index button[aria-current="step"] { border-bottom-color: var(--accent); }
+  .titleblock { grid-template-columns: 1fr 1fr; }
+  .tb-cell:nth-child(2) { border-right: 0; }
+  .tb-cell:nth-child(-n+2) { border-bottom: 1px solid var(--ink); }
+  .grid2, .grid3, .use-detail { grid-template-columns: minmax(0,1fr); }
+  .qc-rule { grid-template-columns: auto minmax(0,1fr); }
+  .qc-rule select, .qc-rule input[type=text] { grid-column: 2; }
+  .sheet { padding: 20px 16px 24px; }
+  .doc { padding: 18px 16px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sheet { animation: rise .18s ease-out; }
+  @keyframes rise { from { transform: translateY(4px); } to { transform: none; } }
+}
+</style>
+
+<div class="wrap">
+  <header class="titleblock" aria-label="Plan title block">
+    <div class="tb-cell"><div class="tb-label">Project</div><div class="tb-value big" id="tb-project">Untitled project</div><div class="tb-sub" id="tb-owner">BIM Execution Plan</div></div>
+    <div class="tb-cell"><div class="tb-label">Governing criteria</div><div class="tb-value" id="tb-agency">NCS V7</div><div class="tb-sub" id="tb-flags"></div></div>
+    <div class="tb-cell"><div class="tb-label">Status</div><div class="tb-value" id="tb-status"><span class="syncdot"></span>Connecting</div><div class="tb-sub" id="tb-edited">&nbsp;</div></div>
+    <div class="tb-cell tb-sheet"><div class="tb-label">Section</div><div class="tb-value" id="tb-sheet">01</div><div class="tb-sub" id="tb-sheetname">Project</div></div>
+  </header>
+
+  <div id="banner" hidden></div>
+
+  <div class="layout">
+    <nav class="index" aria-label="Plan sections">
+      <h2>Sheet index</h2>
+      <ol id="index"></ol>
+      <div class="progress"><span id="progress-text">0 of 11 sections complete</span><div class="bar"><i id="progress-bar" style="width:0%"></i></div></div>
+    </nav>
+    <main class="sheet" id="sheet" aria-live="polite"></main>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+/* ---------- Reference data (from the national-cad-standard and whole-building-design-guide skills) ---------- */
+const HELP = {
+  layers: "https://help.autodesk.com/view/RVT/2027/ENU/?guid=GUID-3541F82B-9E25-47C5-BE52-3F6C6F40DA02",
+  coords: "https://help.autodesk.com/view/RVT/2027/ENU/?guid=GUID-B82147D6-7EAB-48AB-B0C3-3B160E2DCD17",
+  ifc: "https://help.autodesk.com/view/RVT/2026/ENU/?guid=GUID-E029E3AD-1639-4446-A935-C9796BC34C95",
+  cobie: "https://help.autodesk.com/view/RVT/2027/ENU/?guid=GUID-3ACFF70F-D513-44A1-8579-A226A8530FB9",
+  clash: "https://www.autodesk.com/support/technical/article/caas/sfdcarticles/sfdcarticles/How-to-create-a-reusable-Clash-Detective-template-in-Navisworks-Manage-2026.html",
+  usace: "https://www.wbdg.org/FFC/AECCAD/ERDC_ITL_SR_23_1_2023.pdf",
+  usaceCad: "https://www.wbdg.org/ffc/army-coe/technical-reports-tr/erdcitl-tr19-7",
+  gsa: "https://www.gsa.gov/real-estate/facilities-standards-for-the-public-buildings-service",
+  ffc: "https://www.wbdg.org/ffc",
+  ncs: "https://nibs.org/projects/united-states-national-cad-standard-ncs/",
+  psu: "https://psu.pb.unizin.org/bimprojectexecutionplanning/"
+};
+
+const STEPS = [
+  { id: "project", code: "01", name: "Project", iso: "4.1 · 4.2 · 8.2.2", lede: "Basic facts about the project and which criteria govern it. The owner or agency choice changes what later sections ask for." },
+  { id: "team", code: "02", name: "Team", iso: "5.3 · 7.2", lede: "Who holds each role. Every BIM use and quality check later in the plan is assigned to one of these people." },
+  { id: "goals", code: "03", name: "Goals", iso: "6.2", lede: "What the owner and team want BIM to achieve on this project, in order of priority. Goals decide which BIM uses are worth their cost." },
+  { id: "uses", code: "04", name: "BIM uses", iso: "8.1 · 8.3.2", lede: "Pick the uses that serve your goals. Each selected use needs a responsible party and the reason it earns its place." },
+  { id: "process", code: "05", name: "Process", iso: "4.4 · 8.1", lede: "How each selected use flows between parties: who starts it, what they hand over, and who checks it." },
+  { id: "exchanges", code: "06", name: "Exchanges", iso: "8.3.3 · 8.3.5 · 8.4.3", lede: "What model content each party delivers, at what level of development (LOD), and when." },
+  { id: "collab", code: "07", name: "Collaboration", iso: "7.4 · 7.5.3 · 8.4 · 8.3.6", lede: "Where files live, how often models are shared, how the team meets, and how changes are approved." },
+  { id: "tech", code: "08", name: "Technology", iso: "7.1.3 · 7.1.5", lede: "The software and versions each discipline uses, and the file formats they exchange." },
+  { id: "standards", code: "09", name: "Standards", iso: "7.5.2 · 8.3.3", lede: "Layer, sheet, and plotting conventions under the U.S. National CAD Standard, plus any agency overrides." },
+  { id: "qc", code: "10", name: "Quality control", iso: "8.3.4 · 8.6 · 8.7 · 9.1 · 10.2", lede: "The checks every model passes before it's shared or delivered. The NCS BIM rules are listed for you; keep the ones this project needs." },
+  { id: "deliver", code: "11", name: "Deliverables", iso: "8.3.5 · 8.5.2", lede: "The final list of what gets handed over, in which format, and when." },
+  { id: "review", code: "R", name: "Review & export", iso: "", lede: "The assembled plan. Anything still missing is marked in red so the team can see what's left." }
+];
+
+const AGENCIES = {
+  private: "Private / no agency criteria",
+  gsa: "GSA",
+  usace: "USACE / DoD",
+  va: "VA",
+  federal: "Other federal agency",
+  state: "State or local government"
+};
+
+const USES = [
+  { id: "existing", name: "Existing conditions modeling", phase: "Planning", desc: "Model the site and building as they stand today, from survey or laser scan." },
+  { id: "authoring", name: "Design authoring", phase: "Design", desc: "Each discipline builds its design in the model." },
+  { id: "review", name: "Design reviews", phase: "Design", desc: "Owner and stakeholders review the model at set milestones." },
+  { id: "coord", name: "3D coordination (clash detection)", phase: "Design, Construction", desc: "Combine discipline models and resolve conflicts before they reach the field.", link: ["Navisworks clash test template", HELP.clash] },
+  { id: "drawings", name: "Drawing generation", phase: "Design", desc: "Plans, sections, schedules, and the sheet index come from the model, as NCS recommends." },
+  { id: "code", name: "Code validation", phase: "Design", desc: "Use model data to check occupancy, areas, and travel distances." },
+  { id: "energy", name: "Energy analysis", phase: "Design", desc: "Test envelope and system options against energy targets." },
+  { id: "cost", name: "Cost estimation (5D)", phase: "Design, Construction", desc: "Take quantities from the model for estimates." },
+  { id: "4d", name: "Phase planning (4D)", phase: "Construction", desc: "Link the model to the schedule to plan sequencing and logistics." },
+  { id: "ifc", name: "Open exchange (IFC)", phase: "All", desc: "Share models with other tools and the owner in the open IFC format.", link: ["Revit IFC export settings", HELP.ifc] },
+  { id: "record", name: "Record modeling", phase: "Operations", desc: "Update the model to as-built conditions at closeout." },
+  { id: "cobie", name: "Asset management (COBie)", phase: "Operations", desc: "Hand over equipment and space data in COBie format for facility management.", link: ["COBie extension for Revit", HELP.cobie] }
+];
+
+const QC_AUTHOR = [
+  "Start from the approved template and keep every element in its correct category",
+  "Use modeling tools instead of drafting elements by hand",
+  "Assign properties and materials to the objects themselves",
+  "Host elements on the correct level or host, without large offsets",
+  "Let callouts, view references, and titles fill in automatically",
+  "Pull schedules, the drawing index, and keynotes from the model",
+  "Derive plans, elevations, sections, and details from the model",
+  "Don't override dimensions; model real-world sizes after schematic design",
+  "Pin or lock items that must not move, such as field-verified conditions"
+];
+const QC_DELIVER = [
+  "All models share one coordinate system",
+  "All models share units and unit tolerance",
+  "All models share level names and the vertical datum",
+  "Purge, clean, and audit each model before sharing",
+  "Remove unused views, links, and temporary content; keep links relative",
+  "No duplicate or erroneous geometry that would distort quantities",
+  "Resolve excess warnings; document any exceptions",
+  "Provide one composite model per building",
+  "Derive contract documents from the model"
+];
+const QC_CHECKS = [
+  { id: "visual", name: "Visual check", purpose: "No unintended content; design intent is followed" },
+  { id: "clash", name: "Interference check", purpose: "Find conflicts between disciplines" },
+  { id: "standards", name: "Standards check", purpose: "Layer, sheet, and naming conventions are followed" },
+  { id: "integrity", name: "Model integrity check", purpose: "No duplicates, warnings resolved, data complete" }
+];
+const FREQ = ["", "Before each model share", "Weekly", "At each design milestone", "Before each submission", "At closeout"];
+
+/* ---------- State ---------- */
+function blankPlan() {
+  const uses = {}; USES.forEach(u => uses[u.id] = { on: false, party: "", value: "", flow: "" });
+  const qc = {};
+  QC_AUTHOR.forEach((_, i) => qc["a" + i] = { on: true, who: "", freq: "" });
+  QC_DELIVER.forEach((_, i) => qc["d" + i] = { on: true, who: "", freq: "" });
+  const checks = {}; QC_CHECKS.forEach(c => checks[c.id] = { tool: "", who: "", freq: "" });
+  return {
+    v: 1,
+    project: { name: "", owner: "", location: "", delivery: "", agency: "private", phase: "", start: "", cui: "", iso: false },
+    team: [{ role: "BIM manager", org: "", name: "", email: "" }],
+    goals: [{ goal: "", uses: "" }],
+    uses,
+    exchanges: [{ what: "", from: "", to: "", content: "", lod: "", due: "" }],
+    cobie: false,
+    collab: { cde: "", sharing: "", meetings: "", coords: "", naming: "", changes: "" },
+    tech: [{ discipline: "Architectural", software: "", version: "", formats: "" }],
+    standards: { ncs: "V7 (2024)", level2: false, minor: true, status: true, sheet: "level1", codes: [], plotting: "", notes: "", statusField: "status", iso13567: false, layerFormat: "element", sheetCode: "SHET" },
+    qc, checks,
+    deliver: [{ item: "", format: "", due: "" }]
+  };
+}
+function examplePlan() {
+  const p = blankPlan();
+  p.project = { name: "EXAMPLE — Riverside Outpatient Clinic", owner: "Example owner (replace)", location: "Springfield, IL", delivery: "Design-bid-build", agency: "va", phase: "Design development", start: "", cui: "no", iso: true };
+  p.team = [
+    { role: "BIM manager", org: "Example Architects", name: "Example name", email: "" },
+    { role: "Architectural lead", org: "Example Architects", name: "", email: "" },
+    { role: "MEP lead", org: "Example Engineers", name: "", email: "" },
+    { role: "Owner representative", org: "Example owner", name: "", email: "" }
+  ];
+  p.goals = [
+    { goal: "Catch MEP conflicts before construction documents are issued", uses: "3D coordination" },
+    { goal: "Hand over equipment data the facilities team can load directly", uses: "COBie" }
+  ];
+  ["authoring", "coord", "drawings", "cobie"].forEach(id => p.uses[id].on = true);
+  p.uses.coord.party = "BIM manager (Example name)"; p.uses.coord.value = "Reduces field rework on a ceiling-congested clinic";
+  p.uses.coord.flow = "MEP lead uploads NWC exports each Friday → BIM manager runs clash tests → issues assigned in Tuesday coordination meeting → fixes in next upload.";
+  p.cobie = true;
+  p.exchanges = [
+    { what: "Coordination model", from: "MEP lead", to: "BIM manager", content: "Ducts, pipes, cable tray over 2 in.", lod: "LOD 300", due: "Weekly" },
+    { what: "COBie handover", from: "Contractor", to: "Owner", content: "Equipment, spaces, zones", lod: "LOD 500 data", due: "Closeout" }
+  ];
+  p.collab = { cde: "Autodesk Construction Cloud", sharing: "Weekly, Friday", meetings: "Coordination meeting every Tuesday", coords: "Shared coordinates from the site model (survey point at grid A/1)", naming: "", changes: "" };
+  p.tech = [
+    { discipline: "Architectural", software: "Revit", version: "2026", formats: "RVT, IFC, DWG" },
+    { discipline: "MEP", software: "Revit", version: "2026", formats: "RVT, NWC" },
+    { discipline: "Coordination", software: "Navisworks Manage", version: "2026", formats: "NWD, NWF" }
+  ];
+  p.deliver = [{ item: "Composite model", format: "RVT + IFC", due: "Construction documents" }, { item: "COBie workbook", format: "XLSX", due: "Closeout" }];
+  return p;
+}
+
+let plan = blankPlan();
+let current = "project";
+let meta = { updatedBy: null, updatedAt: null };
+const clientId = Math.random().toString(36).slice(2);
+let canWrite = true;
+let mode = "connecting"; // connecting | shared | local | readonly
+let db = null, planRef = null, userCap = null, downloads = null, myId = null;
+let lastLocalEdit = 0, saveTimer = null, saving = false, saveQueued = false, pendingRemote = null;
+let confirmReset = false, confirmExample = false;
+
+/* ---------- Helpers ---------- */
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function getPath(obj, path) { return path.split(".").reduce((o, k) => (o == null ? o : o[k]), obj); }
+function setPath(obj, path, val) {
+  const keys = path.split("."); let o = obj;
+  for (let i = 0; i < keys.length - 1; i++) o = o[keys[i]];
+  o[keys[keys.length - 1]] = val;
+}
+const filled = v => typeof v === "string" ? v.trim() !== "" : !!v;
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2600); }
+const dis = () => (canWrite ? "" : " disabled");
+
+function input(path, label, opts = {}) {
+  const val = getPath(plan, path) ?? "";
+  const id = "f-" + path.replace(/\./g, "-");
+  const ph = opts.ph ? ` placeholder="${esc(opts.ph)}"` : "";
+  let ctl;
+  if (opts.type === "textarea") ctl = `<textarea id="${id}" data-path="${path}"${ph}${dis()}>${esc(val)}</textarea>`;
+  else if (opts.options) ctl = `<select id="${id}" data-path="${path}"${dis()}>${opts.options.map(([v, l]) => `<option value="${esc(v)}"${v === val ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+  else ctl = `<input id="${id}" type="${opts.type || "text"}" data-path="${path}" value="${esc(val)}"${ph}${dis()}>`;
+  if (!label) return ctl;
+  return `<div class="field"><label for="${id}">${esc(label)}</label>${ctl}${opts.hint ? `<p class="hint">${opts.hint}</p>` : ""}</div>`;
+}
+function editTable(listPath, cols, addLabel) {
+  const rows = getPath(plan, listPath);
+  const body = rows.map((r, i) => `<tr>${cols.map(c => `<td>${input(`${listPath}.${i}.${c.key}`, "", { ph: c.ph, options: c.options })}</td>`).join("")}<td class="tight">${canWrite ? `<button class="icon-btn" data-action="remove" data-list="${listPath}" data-index="${i}" aria-label="Remove row ${i + 1}">×</button>` : ""}</td></tr>`).join("");
+  return `<div class="tablewrap"><table class="edit-table"><thead><tr>${cols.map(c => `<th>${esc(c.label)}</th>`).join("")}<th></th></tr></thead><tbody>${body || `<tr><td colspan="${cols.length + 1}" class="hint">No rows yet.</td></tr>`}</tbody></table></div>
+  ${canWrite ? `<div class="row-actions"><button class="btn small ghost" data-action="add" data-list="${listPath}">+ ${esc(addLabel)}</button></div>` : ""}`;
+}
+function teamOptions() {
+  const names = plan.team.map(t => t.role + (t.name ? ` (${t.name})` : "")).filter(s => s.trim());
+  return [["", "Choose…"], ...names.map(n => [n, n])];
+}
+const agencyIsUsace = () => plan.project.agency === "usace";
+
+/* ---------- Completion ---------- */
+function status(id) {
+  const p = plan;
+  const ratio = (arr) => { const f = arr.filter(Boolean).length; return f === 0 ? "empty" : f === arr.length ? "done" : "partial"; };
+  switch (id) {
+    case "project": return ratio([p.project.name, p.project.owner, p.project.location, p.project.delivery, p.project.phase].map(filled));
+    case "team": return p.team.some(t => filled(t.role) && filled(t.name)) ? (p.team.every(t => filled(t.name)) ? "done" : "partial") : "empty";
+    case "goals": return p.goals.some(g => filled(g.goal)) ? "done" : "empty";
+    case "uses": { const on = USES.filter(u => p.uses[u.id].on); return on.length === 0 ? "empty" : on.every(u => filled(p.uses[u.id].party)) ? "done" : "partial"; }
+    case "process": { const on = USES.filter(u => p.uses[u.id].on); if (!on.length) return "empty"; return ratio(on.map(u => filled(p.uses[u.id].flow))); }
+    case "exchanges": return p.exchanges.some(e => filled(e.what)) ? (p.exchanges.every(e => filled(e.what) && filled(e.lod) && filled(e.due)) ? "done" : "partial") : "empty";
+    case "collab": return ratio(["cde", "sharing", "meetings", "coords", "naming", "changes"].map(k => filled(p.collab[k])));
+    case "tech": return p.tech.some(t => filled(t.software)) ? (p.tech.every(t => filled(t.software) && filled(t.version)) ? "done" : "partial") : "empty";
+    case "standards": return ratio([filled(p.standards.ncs), filled(p.standards.plotting), !agencyIsUsace() || filled(p.project.cui), !(p.standards.iso13567 && p.standards.statusField === "both")]);
+    case "qc": { const ch = QC_CHECKS.map(c => filled(p.checks[c.id].who) && filled(p.checks[c.id].freq)); return ratio(ch); }
+    case "deliver": return p.deliver.some(d => filled(d.item)) ? (p.deliver.every(d => filled(d.item) && filled(d.due)) ? "done" : "partial") : "empty";
+    default: return "empty";
+  }
+}
+
+/* ---------- Section renderers ---------- */
+const R = {};
+R.project = () => `
+  <div class="block">
+    <div class="grid2">
+      ${input("project.name", "Project name", { ph: "e.g. Riverside Outpatient Clinic" })}
+      ${input("project.owner", "Owner", { ph: "Owner organization" })}
+      ${input("project.location", "Location", { ph: "City, state" })}
+      ${input("project.delivery", "Delivery method", { options: [["", "Choose…"], ["Design-bid-build", "Design-bid-build"], ["Design-build", "Design-build"], ["CM at risk", "CM at risk"], ["IPD", "Integrated project delivery"], ["Other", "Other"]] })}
+      ${input("project.phase", "Current phase", { options: [["", "Choose…"], ["Planning", "Planning"], ["Schematic design", "Schematic design"], ["Design development", "Design development"], ["Construction documents", "Construction documents"], ["Construction", "Construction"], ["Closeout", "Closeout"]] })}
+      ${input("project.start", "BEP effective date", { type: "date" })}
+    </div>
+  </div>
+  <div class="block">
+    <h3>Governing criteria</h3>
+    ${input("project.agency", "Owner type or agency", { options: Object.entries(AGENCIES), hint: "Agency criteria override NCS where they're stricter. Look them up on the Whole Building Design Guide." })}
+    ${agencyCallout()}
+  </div>
+  <div class="block">
+    <h3>Quality system</h3>
+    <div class="choice"><label><input type="checkbox" id="f-project-iso" data-path="project.iso"${plan.project.iso ? " checked" : ""}${dis()}><span>Align this plan with ISO 9001:2015<small>Tags each section with the ISO 9001 clause it supports, by clause number only.</small></span></label></div>
+  </div>
+  ${canWrite ? `<div class="block">
+    <h3>Start from an example</h3>
+    <p class="hint">Fills every section with a clearly labeled example clinic project so you can see how a finished plan reads. It replaces what's here now.</p>
+    ${confirmExample ? `<div class="confirm"><p>Replace the current plan with the example? This can't be undone.</p><div class="row-actions"><button class="btn danger small" data-action="example-yes">Replace with example</button><button class="btn small ghost" data-action="example-no">Keep my plan</button></div></div>` : `<div class="row-actions"><button class="btn small ghost" data-action="example">Load example project</button></div>`}
+  </div>` : ""}`;
+
+function agencyCallout() {
+  const a = plan.project.agency;
+  if (a === "usace") return `<div class="callout usace"><p><b>USACE / DoD project.</b> The A/E/C Graphics Standard (Release 2.2) applies on top of NCS. Section 09 will list its rules, and you'll need a CUI decision.</p><p><a href="${HELP.usace}" target="_blank" rel="noopener">A/E/C Graphics Standard on WBDG</a> · <a href="${HELP.usaceCad}" target="_blank" rel="noopener">A/E/C CAD Standard 6.1</a></p></div>`;
+  if (a === "gsa") return `<div class="callout"><p><b>GSA project.</b> Check the current P100 Facilities Standards and the annual Core Building Standards memo, plus GSA's BIM Guide series.</p><p><a href="${HELP.gsa}" target="_blank" rel="noopener">GSA facilities standards</a></p></div>`;
+  if (a === "va" || a === "federal") return `<div class="callout"><p><b>Federal project.</b> Find the agency's design and BIM criteria under Federal Facility Criteria on WBDG and cite the version in this plan.</p><p><a href="${HELP.ffc}" target="_blank" rel="noopener">WBDG Federal Facility Criteria</a></p></div>`;
+  return "";
+}
+
+R.team = () => `
+  <div class="block">
+    ${editTable("team", [
+      { key: "role", label: "Role", ph: "e.g. MEP lead" },
+      { key: "org", label: "Organization", ph: "Firm" },
+      { key: "name", label: "Name", ph: "Full name" },
+      { key: "email", label: "Email", ph: "name@firm.com" }
+    ], "Add person")}
+    <p class="hint">Typical roles: BIM manager, discipline leads (architectural, structural, MEP, civil), contractor's VDC lead, owner representative, facility manager.</p>
+  </div>`;
+
+R.goals = () => `
+  <div class="block">
+    ${editTable("goals", [
+      { key: "goal", label: "Goal (highest priority first)", ph: "e.g. Catch MEP conflicts before CDs are issued" },
+      { key: "uses", label: "Related BIM uses", ph: "e.g. 3D coordination" }
+    ], "Add goal")}
+    <p class="hint">Write goals as outcomes you can check later. "Reduce RFIs about ceiling conflicts" is easier to measure than "use BIM well".</p>
+  </div>`;
+
+R.uses = () => `
+  <div class="uses">${USES.map(u => {
+    const s = plan.uses[u.id];
+    return `<div class="use${s.on ? " on" : ""}">
+      <input type="checkbox" id="f-use-${u.id}" data-path="uses.${u.id}.on"${s.on ? " checked" : ""}${dis()}>
+      <div><label for="f-use-${u.id}" class="use-name">${esc(u.name)}</label><span class="tag">${esc(u.phase)}</span>
+      <div class="use-meta">${esc(u.desc)}${u.link ? ` <a href="${u.link[1]}" target="_blank" rel="noopener">${esc(u.link[0])}</a>` : ""}</div></div>
+      ${s.on ? `<div class="use-detail">${input(`uses.${u.id}.party`, "Responsible party", { options: teamOptions() })}${input(`uses.${u.id}.value`, "Why it's worth doing", { ph: "Value to this project" })}</div>` : ""}
+    </div>`;
+  }).join("")}</div>`;
+
+R.process = () => {
+  const on = USES.filter(u => plan.uses[u.id].on);
+  if (!on.length) return `<div class="callout"><p>No BIM uses are selected yet. Choose them in section 04 and each one will appear here.</p><div class="row-actions"><button class="btn small" data-goto="uses">Go to BIM uses</button></div></div>`;
+  const m = buildMap();
+  return `<div class="block">${on.map(u => input(`uses.${u.id}.flow`, u.name, { type: "textarea", ph: "Who starts it → what they hand over → who checks it → what happens next" })).join("")}
+  <div class="callout"><p><b>Level 1 process map.</b> Built from your BIM uses and the exchanges in section 06; it's included in the Markdown export. ${m.notes.length ? `Not on the map yet: ${esc(m.notes.join("; "))}. Name each exchange after what it feeds (for example "coordination model") to place it.` : "Every exchange is on the map."}</p><div class="row-actions"><button class="btn small ghost" data-action="copy-map">Copy map (Mermaid)</button></div></div>
+  <p class="hint">A sentence or two per use is enough here. Detailed process maps can be attached to the exported plan. <a href="${HELP.psu}" target="_blank" rel="noopener">Penn State BIM planning guide</a></p></div>`;
+};
+
+R.exchanges = () => `
+  <div class="block">
+    ${editTable("exchanges", [
+      { key: "what", label: "Exchange", ph: "e.g. Coordination model" },
+      { key: "from", label: "From", ph: "Author" },
+      { key: "to", label: "To", ph: "Receiver" },
+      { key: "content", label: "Model content", ph: "What's included" },
+      { key: "lod", label: "LOD", options: [["", "—"], ["LOD 100", "100"], ["LOD 200", "200"], ["LOD 300", "300"], ["LOD 350", "350"], ["LOD 400", "400"], ["LOD 500 data", "500 (as-built data)"]] },
+      { key: "due", label: "Due", ph: "Milestone or frequency" }
+    ], "Add exchange")}
+    <div class="choice"><label><input type="checkbox" id="f-cobie" data-path="cobie"${plan.cobie ? " checked" : ""}${dis()}><span>COBie facility handover is required<small>Adds a COBie deliverable and its timing to the plan. <a href="${HELP.cobie}" target="_blank" rel="noopener">COBie extension for Revit</a></small></span></label></div>
+  </div>`;
+
+R.collab = () => `
+  <div class="grid2">
+    ${input("collab.cde", "Common data environment", { ph: "e.g. Autodesk Construction Cloud", hint: "Where models and documents live." })}
+    ${input("collab.sharing", "Model sharing frequency", { ph: "e.g. Weekly, Friday noon" })}
+    ${input("collab.meetings", "Coordination meetings", { ph: "e.g. Tuesdays, 1 hour" })}
+    ${input("collab.coords", "Shared coordinates and datum", { ph: "Source model, survey point, levels", hint: `<a href="${HELP.coords}" target="_blank" rel="noopener">Revit shared coordinates</a>` })}
+  </div>
+  ${input("collab.naming", "Model file naming", { type: "textarea", ph: "e.g. [Project]-[Discipline]-[Building]-[Zone].rvt", hint: "NCS leaves native model file naming to the BEP. Exported CAD sheet files still follow UDS naming." })}
+  ${input("collab.changes", "Change control", { type: "textarea", ph: "How changes are requested, reviewed, approved, and recorded" })}`;
+
+R.tech = () => `
+  <div class="block">
+    ${editTable("tech", [
+      { key: "discipline", label: "Discipline", ph: "e.g. Structural" },
+      { key: "software", label: "Software", ph: "e.g. Revit" },
+      { key: "version", label: "Version", ph: "e.g. 2026" },
+      { key: "formats", label: "Exchange formats", ph: "e.g. RVT, IFC, NWC" }
+    ], "Add discipline")}
+    <p class="hint">Everyone who links models should be on the same major version. Note any exceptions here.</p>
+  </div>`;
+
+R.standards = () => {
+  const s = plan.standards;
+  const usace = agencyIsUsace();
+  return `
+  <div class="block">
+    <h3>National CAD Standard</h3>
+    <div class="grid2">
+      ${input("standards.ncs", "NCS edition", { options: [["V7 (2024)", "Version 7 (2024)"], ["V6 (2014)", "Version 6 (2014)"]], hint: `Cite the edition named in the contract. <a href="${HELP.ncs}" target="_blank" rel="noopener">About the NCS</a>` })}
+      ${input("standards.plotting", "Plot style file", { ph: "e.g. NCS-mono.ctb", hint: "Line widths 0.13–2.00 mm per NCS Plotting Guidelines." })}
+    </div>
+  </div>
+  <div class="block">
+    <h3>Layer naming</h3>
+    <p class="hint">On BIM projects NCS requires only the discipline letter and major group, like <span class="code-ex">A-WALL</span>. Fields you choose to use must follow the standard. <a href="${HELP.layers}" target="_blank" rel="noopener">Revit DWG export layer mapping</a></p>
+    <div class="choice">
+      <label><input type="checkbox" id="f-std-level2" data-path="standards.level2"${s.level2 ? " checked" : ""}${dis()}><span>Two-letter disciplines<small class="code-ex">AD-WALL</small></span></label>
+      ${s.iso13567 ? "" : `<label><input type="checkbox" id="f-std-minor" data-path="standards.minor"${s.minor ? " checked" : ""}${dis()}><span>Minor groups<small class="code-ex">A-WALL-FULL</small></span></label>`}
+    </div>
+  </div>
+  <div class="block">
+    <h3>Status field</h3>
+    <p class="hint">The last field of a layer name. Decide once for the whole project.</p>
+    <div class="choice" role="radiogroup">
+      ${[["status", "Status letters", "A-WALL-D", "N new, E existing, D demolish, F future…"], ["phase", "Phase numbers", "A-WALL-2", "1–9 for construction phases"], ["none", "Not used", "A-WALL", "No status field on any layer"], ["both", "Letters or numbers", "A-WALL-D / -2", "Plain NCS; not allowed with ISO 13567"]].map(([v, l, ex, d]) => {
+        const off = s.iso13567 && v === "both";
+        return `<label><input type="radio" name="statusField" id="f-sf-${v}" data-path="standards.statusField" value="${v}"${s.statusField === v ? " checked" : ""}${off ? " disabled" : dis()}><span>${l} <span class="code-ex">${ex}</span><small>${d}</small></span></label>`;
+      }).join("")}
+    </div>
+    ${s.iso13567 && s.statusField === "both" ? `<p class="hint" style="color:var(--redline)">ISO 13567 needs status letters or phase numbers, not both. Choose one above.</p>` : ""}
+  </div>
+  <div class="block">
+    <h3>ISO 13567 conformance</h3>
+    <div class="choice"><label><input type="checkbox" id="f-std-iso13567" data-path="standards.iso13567"${s.iso13567 ? " checked" : ""}${dis()}><span>Name layers in conceptual conformance with ISO 13567<small>For international work or owners who require ISO layer naming. Follows NCS Appendix C: no ANNO, fixed-length names with placeholders.</small></span></label></div>
+    ${s.iso13567 ? isoBlock(s) : ""}
+  </div>
+  <div class="block">
+    <h3>Sheet identification</h3>
+    <div class="choice" role="radiogroup">
+      ${[["level1", "Level 1", "A-101", "One discipline letter plus hyphen"], ["level2", "Level 2 modifiers", "AD101", "Two letters, no hyphen"], ["campus", "Level 2 building IDs", "AA101", "Second letter names the building"]].map(([v, l, ex, d]) => `<label><input type="radio" name="sheet" id="f-sheet-${v}" data-path="standards.sheet" value="${v}"${s.sheet === v ? " checked" : ""}${dis()}><span>${l} <span class="code-ex">${ex}</span><small>${d}</small></span></label>`).join("")}
+    </div>
+    <p class="hint">Sheet IDs are always 5 characters, sequence 01–99. A project uses Level 2 letters for modifiers or for buildings, never both.</p>
+  </div>
+  <div class="block">
+    <h3>User-defined codes</h3>
+    <p class="hint">Project-specific 4-character major or minor groups. NCS requires each one on the project's Compliance Disclosure Statement.</p>
+    ${editTable("standards.codes", [{ key: "code", label: "Code", ph: "e.g. A-WALL-ACOU" }, { key: "meaning", label: "Meaning", ph: "Acoustic wall assemblies" }], "Add code")}
+  </div>
+  <div class="block">
+    <h3>Check names</h3>
+    <p class="hint">Paste layer names or sheet IDs, one per line or separated by spaces. Layers are checked against ${plan.standards.iso13567 ? "this project's ISO 13567 format" : "NCS with this project's status field setting"}.</p>
+    <textarea id="checker-input" placeholder="A-WALL-FULL&#10;a-wall&#10;S501&#10;AD101&#10;A-102-R1"></textarea>
+    <div class="row-actions"><button class="btn small" data-action="check">Check names</button></div>
+    <div id="checker-out"></div>
+  </div>
+  ${usace ? `<div class="block">
+    <h3>USACE / DoD overrides</h3>
+    <div class="callout usace"><p>From the A/E/C Graphics Standard, Release 2.2 (2023). These apply on top of NCS.</p>
+    <ul>
+      <li>Contract sheets on ANSI D (22 × 34 in.); E or F for oversized work; ISO A1 internationally.</li>
+      <li>Arial, all capitals. Building disciplines 3/32 in. text, civil disciplines 1/8 in.; titles 3/16 in.</li>
+      <li>New work at 100%; existing conditions screened 20–60%. Demolition plans separate from new work.</li>
+      <li>Rooms numbered from the main entrance by floor (lobby 100). Doors take the room number, then A, B… clockwise.</li>
+      <li>Revisions: triangles with numbers (1, 2, 3) for amendments before award, letters (A, B, C) for modifications after.</li>
+    </ul>
+    <p><a href="${HELP.usace}" target="_blank" rel="noopener">Read the standard on WBDG</a></p></div>
+    ${input("project.cui", "Do the drawings contain Controlled Unclassified Information (CUI)?", { options: [["", "Not decided yet"], ["no", "No"], ["yes", "Yes — mark every sheet and the cover"]], hint: "The Project Delivery Team decides using the CUI flowchart. A yes also limits who can access models in the common data environment." })}
+  </div>` : ""}
+  ${input("standards.notes", "Other standards or owner requirements", { type: "textarea", ph: "Owner CAD/BIM standard, LOD specification, accessibility, etc." })}`;
+};
+
+function isoBlock(s) {
+  const prof = profileFor();
+  return `
+    <div class="choice" role="radiogroup">
+      <label><input type="radio" name="layerFormat" id="f-lf-element" data-path="standards.layerFormat" value="element"${s.layerFormat === "element" ? " checked" : ""}${dis()}><span>Element format <span class="code-ex">${prof.level === 2 ? "AI" : "A"}-WALL-FULL-TEXT</span><small>Second field refines the element (FULL, PATT…)</small></span></label>
+      <label><input type="radio" name="layerFormat" id="f-lf-view" data-path="standards.layerFormat" value="view"${s.layerFormat === "view" ? " checked" : ""}${dis()}><span>Drawing-view format <span class="code-ex">${prof.level === 2 ? "AI" : "A"}-WALL-ELEV-TEXT</span><small>Second field holds DETL, ELEV, or SECT</small></span></label>
+    </div>
+    <div class="callout">
+      <p><b>This project's layer format:</b> <span class="code-ex">${esc(isoTemplate(prof))}</span> — every name is ${isoLength(prof)} characters. Example: <span class="code-ex">${esc(isoExample(prof))}</span></p>
+      <ul>
+        <li><b>ANNO is not used.</b> Annotation codes such as TEXT, DIMS, NOTE, and NPLT go in the annotation field of the element they describe: <span class="code-ex">${esc(isoExample(prof))}</span>, not <span class="code-ex">A-ANNO-TEXT</span>.</li>
+        <li>Using TEXT as the major group in ANNO's place repeats the same problem, because the major group is ISO's building-element field.</li>
+        <li>Fill unused fields with <span class="code-ex">____</span> so every name has the same length, e.g. <span class="code-ex">${esc(isoExample(prof, true))}</span>.</li>
+        <li>Deliver a layer naming system definition file (ISO 13567-3) with the CAD files.</li>
+      </ul>
+    </div>
+    <div class="block">
+      <h3>Convert existing layers</h3>
+      <div class="grid2">${input("standards.sheetCode", "Sheet-level annotation code", { ph: "SHET", hint: `Replaces ANNO for title blocks, general notes, legends, and stamps, e.g. <span class="code-ex">G-${esc(sheetCode() || "SHET")}-____-TTLB-N</span>. Listed automatically as a user-defined code.${filled(plan.standards.sheetCode) && !sheetCode() ? ' <b style="color:var(--redline)">Must be exactly 4 letters, digits, or ~.</b>' : ""}` })}</div>
+      <p class="hint">Paste current layer names. Sheet-level ANNO layers move to the code above; ANNO layers that describe an element (dimensions, tags, wall text) need that element.</p>
+      <textarea id="convert-input" placeholder="G-ANNO-TTLB&#10;A-ANNO-DIMS&#10;A-WALL-FULL-D&#10;A-DOOR-IDEN-N"></textarea>
+      <div class="grid2"><div class="field"><label for="convert-elem">Element for all remaining ANNO layers (optional)</label><input type="text" id="convert-elem" maxlength="4" placeholder="e.g. WALL"></div></div>
+      <div class="row-actions"><button class="btn small" data-action="convert">Suggest new names</button><button class="btn small ghost" data-action="definition">Copy definition file</button><button class="btn small ghost" data-action="definition-save">Download definition file</button></div>
+      <div id="convert-out"></div>
+    </div>`;
+}
+
+/* ---------- ISO 13567 profile (port of iso13567.py; NCS CLG Appendix C) ---------- */
+const ANNOT = new Set("BRNG DIMS IDEN KEYN LABL LEGN LOGO MARK MATC NOTE NPLT PROS RDME REDL REFR REVC REVS SCHD STMP SYMB TABL TEXT TITL TTLB".split(" "));
+const VIEWS = new Set(["DETL", "ELEV", "SECT"]);
+const ANNN = /^[A-Z][0-9]{3}$/;
+const SHEET_LEVEL = new Set("TTLB LOGO STMP PROS RDME REVS NOTE LEGN TITL SCHD TABL NPLT".split(" "));
+const SHEET_MEANING = "Sheet-level annotation (title blocks, general notes, legends, stamps); replaces ANNO";
+const sheetCode = () => { const c = (plan.standards.sheetCode || "").trim().toUpperCase(); return /^[A-Z0-9~]{4}$/.test(c) ? c : ""; };
+function disclosureCodes() {
+  const codes = plan.standards.codes.filter(c => filled(c.code)), sc = sheetCode();
+  return plan.standards.iso13567 && sc && !codes.some(c => c.code.toUpperCase() === sc) ? [{ code: sc, meaning: SHEET_MEANING }, ...codes] : codes;
+}
+const LETTERS = new Set("ADEFMNTX".split("")), PHASES = new Set("123456789".split(""));
+const PH = "____";
+function profileFor() {
+  const s = plan.standards;
+  return { level: s.level2 ? 2 : 1, fmt: s.layerFormat === "view" ? "view" : "element", status: ["status", "phase", "none"].includes(s.statusField) ? s.statusField : "status" };
+}
+const isoFieldCount = p => 4 + (p.status !== "none" ? 1 : 0);
+const isoLength = p => p.level + 1 + 15 + (p.status !== "none" ? 2 : 0);
+const isoTemplate = p => `${p.level === 2 ? "DD" : "D"}-MAJR-${p.fmt === "element" ? "ELEM" : "VIEW"}-ANNT${{ status: "-S", phase: "-#", none: "" }[p.status]}`;
+function isoExample(p, placeholders) {
+  const d = p.level === 2 ? "AI" : "A", st = { status: "-N", phase: "-2", none: "" }[p.status];
+  return placeholders ? `${d}-WALL-${PH}-${PH}${st}` : `${d}-WALL-${p.fmt === "element" ? "FULL" : "ELEV"}-TEXT${st}`;
+}
+function statusProblem(ch, mode) {
+  if (ch === "_") return null;
+  if (mode === "status" && !LETTERS.has(ch)) return `status '${ch}' must be a status letter (A D E F M N T X); this project uses status, not phase`;
+  if (mode === "phase" && !PHASES.has(ch)) return `status '${ch}' must be a phase number 1–9; this project uses phase, not status letters`;
+  return null;
+}
+function isoCheck(n, p) {
+  if (/ /.test(n)) return ["no spaces allowed"];
+  const pr = []; if (n !== n.toUpperCase()) pr.push("use uppercase only");
+  const f = n.toUpperCase().split("-");
+  if (f.includes("ANNO")) pr.push("ANNO isn't allowed under ISO 13567 — put the annotation code in the annotation field of a building-element layer");
+  if (f.length !== isoFieldCount(p)) { pr.push(`needs ${isoFieldCount(p)} fields like ${isoExample(p)} (use ${PH} for an unused field); found ${f.length}`); return pr; }
+  const [d, maj, sec, ann] = f;
+  if (d.length !== p.level || !/^[A-Z]+$/.test(d) || !DISC.has(d[0])) pr.push(`discipline '${d}' must be ${p.level} letter${p.level === 2 ? "s" : ""} starting with a known designator`);
+  if (maj === PH || !CODE.test(maj)) pr.push(`major group '${maj}' must be a 4-character building element code`);
+  else if (maj !== "ANNO" && ANNOT.has(maj)) pr.push(`'${maj}' is an annotation code, so it can't be the major group (ISO's element field) — use an element such as WALL and put ${maj} in the annotation field`);
+  else if (VIEWS.has(maj)) pr.push(`'${maj}' is a drawing-view code and can't be the major group under ISO 13567`);
+  if (sec !== PH) {
+    if (p.fmt === "element") {
+      if (ANNOT.has(sec)) pr.push(`'${sec}' is an annotation code; it belongs in the annotation field (4th), not the element field`);
+      else if (VIEWS.has(sec) || ANNN.test(sec)) pr.push(`'${sec}' is a drawing-view code; this project's format uses this field for element refinements`);
+      else if (!CODE.test(sec)) pr.push(`element refinement '${sec}' must be 4 characters or ${PH}`);
+    } else if (!(VIEWS.has(sec) || ANNN.test(sec))) pr.push(`'${sec}' isn't a drawing-view code; this field takes DETL, ELEV, SECT, a letter+number (D001), or ${PH}`);
+  }
+  if (ann !== PH && !ANNOT.has(ann)) pr.push(`'${ann}' isn't an annotation code; the 4th field takes codes like TEXT, DIMS, NOTE, NPLT, or ${PH}`);
+  if (p.status !== "none") { const st = f[4]; if (st.length !== 1) pr.push(`status field '${st}' must be one character`); else { const x = statusProblem(st, p.status); if (x) pr.push(x); } }
+  return pr;
+}
+function isoConvert(name, p, annoElem, sheetElem) {
+  const notes = [];
+  const f = name.toUpperCase().replace(/_/g, "-").split("-").filter(Boolean);
+  if (f.length < 2) return [null, ["not a recognizable NCS layer name"]];
+  let [d, maj, ...rest] = f, status = null;
+  if (rest.length && rest[rest.length - 1].length === 1) status = rest.pop();
+  if (p.level === 2 && d.length === 1) return [null, [`this project uses 2-letter disciplines; choose a modifier for '${d}'`]];
+  if (p.level === 1 && d.length === 2) { notes.push(`dropped discipline modifier '${d[1]}'`); d = d[0]; }
+  const elem = [], view = [], ann = [];
+  rest.forEach(c => ANNOT.has(c) ? ann.push(c) : (VIEWS.has(c) || ANNN.test(c)) ? view.push(c) : elem.push(c));
+  if (maj === "ANNO") {
+    if (!ann.length) { ann.push("TEXT"); notes.push("plain ANNO layer mapped to annotation code TEXT"); }
+    if (!annoElem && sheetElem && SHEET_LEVEL.has(ann[0])) annoElem = sheetElem;
+    if (!annoElem) return [null, [...notes, sheetElem ? `${ann[0]} describes a building element, so it doesn't go on ${sheetElem}; pick the element it belongs to (e.g. WALL, DOOR, EQPM)` : `choose the building element this ${ann.join(", ")} belongs to, or a project code for sheet-level annotation`]];
+    maj = annoElem; notes.push(`ANNO replaced by element '${annoElem}'; '${ann[0]}' moved to the annotation field`);
+  } else if (VIEWS.has(maj)) return [null, [`'${maj}' layers need a building element as the major group`]];
+  else if (ANNOT.has(maj)) return [null, [`'${maj}' is an annotation code, not a building element; choose the element it annotates`]];
+  if (ann.length > 1) return [null, [...notes, `more than one annotation code (${ann.join(", ")}); split into separate layers`]];
+  let sec;
+  if (p.fmt === "element") { if (view.length) return [null, [...notes, `drawing-view code ${view[0]} has no place in the element format`]]; if (elem.length > 1) return [null, [...notes, `two element refinements (${elem.join(", ")}); only one fits`]]; sec = elem[0] || PH; }
+  else { if (elem.length) return [null, [...notes, `element refinement ${elem[0]} has no place in the drawing-view format`]]; sec = view[0] || PH; }
+  const parts = [d, maj, sec, ann[0] || PH];
+  if (p.status !== "none") {
+    if (status == null) { parts.push("_"); notes.push("no status in the original; '_' added — set the real status"); }
+    else if (statusProblem(status, p.status)) { parts.push("_"); notes.push(`status '${status}' doesn't fit this project's ${p.status} field; set it`); }
+    else parts.push(status);
+  } else if (status) notes.push(`status '${status}' dropped (no status field)`);
+  const out = parts.join("-"), left = isoCheck(out, p);
+  return left.length ? [null, [...notes, ...left]] : [out, notes];
+}
+function isoDefinition(p) {
+  const rows = [["Position", "NCS field", "ISO 13567 field", "Characters", "Allowed codes"]];
+  let pos = 1;
+  rows.push([pos, `Discipline designator (Level ${p.level})`, "Agent responsible", p.level + 1, "NCS discipline designators; trailing '-' counted"]); pos += p.level + 1;
+  rows.push([pos, "Major group", "Element", 5, "NCS major groups (building elements); ANNO not used"]); pos += 5;
+  rows.push(p.fmt === "element" ? [pos, "Minor group 1", "Element (continued)", 5, `NCS minor groups refining the element, or ${PH}`] : [pos, "Minor group 1 (drawing view)", "Projection", 5, `DETL, ELEV, SECT, letter+001-999, or ${PH}`]); pos += 5;
+  const last = p.status === "none";
+  rows.push([pos, "Minor group 2 (annotation)", "Presentation", last ? 4 : 5, `NCS annotation codes (${[...ANNOT].sort().join(", ")}) or ${PH}`]); pos += last ? 4 : 5;
+  if (p.status === "status") rows.push([pos, "Status", "Status", 1, "A=Abandoned, D=Existing to demolish, E=Existing to remain, F=Future work, M=Items to be moved, N=New work, T=Temporary work, X=Not in contract"]);
+  if (p.status === "phase") rows.push([pos, "Status (phase)", "Phase", 1, "1-9 = construction phase number"]);
+  let t = [`# Layer naming system definition — ${plan.project.name || "Project"}`, "# NCS layer format in conceptual conformance with ISO 13567 (NCS CLG Appendix C)", `# Total length: ${isoLength(p)} characters; field order fixed; '-' delimiters belong to the preceding field`, `# Example: ${isoExample(p)}`, ...rows.map(r => r.join("\t"))].join("\n") + "\n";
+  const codes = disclosureCodes();
+  if (codes.length) t += "\n# User-defined codes (also on the NCS Compliance Disclosure Statement)\nCode\tMeaning\n" + codes.map(c => `${c.code}\t${c.meaning || ""}`).join("\n") + "\n";
+  return t;
+}
+function runConvert() {
+  const names = ($("#convert-input").value || "").split(/[\s,]+/).filter(Boolean).slice(0, 300);
+  const out = $("#convert-out");
+  if (!names.length) { out.innerHTML = `<p class="hint">Paste at least one layer name first.</p>`; return; }
+  const el = ($("#convert-elem").value || "").trim().toUpperCase();
+  if (el && !/^[A-Z0-9~]{4}$/.test(el)) { out.innerHTML = `<p class="hint" style="color:var(--redline)">The element code must be exactly 4 letters, digits, or ~.</p>`; return; }
+  const p = profileFor();
+  const sc = sheetCode();
+  const rows = names.map(n => { const [nw, notes] = isoConvert(n, p, el || null, sc || null); return `<tr><td class="mono">${esc(n)}</td><td class="mono ${nw ? "check-ok" : "check-bad"}">${esc(nw || "Needs a decision")}</td><td>${esc(notes.join("; ") || "—")}</td></tr>`; }).join("");
+  out.innerHTML = `<div class="tablewrap"><table><thead><tr><th>Current</th><th>Suggested</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+R.qc = () => `
+  <div class="block">
+    <h3>Checks</h3>
+    <div class="tablewrap"><table class="edit-table"><thead><tr><th>Check</th><th>Purpose</th><th>Tool</th><th>Responsible</th><th>Frequency</th></tr></thead><tbody>
+    ${QC_CHECKS.map(c => `<tr><td><b>${esc(c.name)}</b></td><td>${esc(c.purpose)}</td><td>${input(`checks.${c.id}.tool`, "", { ph: c.id === "clash" ? "e.g. Navisworks" : "Tool" })}</td><td>${input(`checks.${c.id}.who`, "", { options: teamOptions() })}</td><td>${input(`checks.${c.id}.freq`, "", { options: FREQ.map(f => [f, f || "Choose…"]) })}</td></tr>`).join("")}
+    </tbody></table></div>
+  </div>
+  ${qcGroup("Model authoring rules", "a", QC_AUTHOR)}
+  ${qcGroup("Model coordination and delivery rules", "d", QC_DELIVER)}
+  <p class="hint">Rules from the NCS BIM Implementation module. Unchecked rules are left out of the exported plan.</p>`;
+
+function qcGroup(title, prefix, rules) {
+  return `<div class="block"><h3>${title}</h3><div>${rules.map((r, i) => {
+    const k = prefix + i, s = plan.qc[k];
+    return `<div class="qc-rule"><input type="checkbox" id="f-qc-${k}" data-path="qc.${k}.on" aria-label="Include rule"${s.on ? " checked" : ""}${dis()}><label for="f-qc-${k}" class="txt">${esc(r)}</label>${input(`qc.${k}.who`, "", { options: teamOptions() })}${input(`qc.${k}.freq`, "", { options: FREQ.map(f => [f, f || "Frequency"]) })}</div>`;
+  }).join("")}</div></div>`;
+}
+
+R.deliver = () => `
+  <div class="block">
+    ${editTable("deliver", [{ key: "item", label: "Deliverable", ph: "e.g. Composite model" }, { key: "format", label: "Format", ph: "e.g. RVT + IFC" }, { key: "due", label: "Due", ph: "Milestone" }], "Add deliverable")}
+    <p class="hint">If BIM is a contract deliverable, NCS expects one composite model per building.${plan.cobie ? " COBie is marked as required in section 06 and will be added automatically." : ""}</p>
+  </div>`;
+
+R.review = () => {
+  const doc = buildDoc();
+  const todos = countTodos(doc);
+  const done = STEPS.filter(s => s.id !== "review" && status(s.id) === "done").length;
+  return `
+  <div class="stats"><div><b>${done}/11</b>sections complete</div><div><b style="color:var(--redline)">${todos}</b>items marked TODO</div><div><b>${USES.filter(u => plan.uses[u.id].on).length}</b>BIM uses</div></div>
+  <div class="row-actions">
+    <button class="btn primary" data-action="save-md">Download Markdown</button>
+    <button class="btn" data-action="save-html">Download HTML</button>
+    <button class="btn ghost" data-action="copy-md">Copy as Markdown</button>
+  </div>
+  <p class="hint" id="export-note">Markdown opens in any editor and pastes into Claude Docs or Word. HTML opens in a browser and prints cleanly.</p>
+  <article class="doc">${docToHtml(doc)}</article>
+  ${canWrite ? `<div class="block">
+    <h3>Start over</h3>
+    ${confirmReset ? `<div class="confirm"><p>Clear every section for everyone using this plan? This can't be undone.</p><div class="row-actions"><button class="btn danger small" data-action="reset-yes">Clear the plan</button><button class="btn small ghost" data-action="reset-no">Keep it</button></div></div>` : `<div class="row-actions"><button class="btn small danger" data-action="reset">Clear plan</button></div>`}
+  </div>` : ""}`;
+};
+
+/* ---------- Level 1 process map (port of processmap.py) ---------- */
+const MAP_PHASES = ["Planning", "Design", "Construction", "Operations"];
+const USE_WORDS = { existing: ["existing", "scan", "survey", "point cloud"], authoring: ["design model", "authoring", "discipline model"], review: ["review"], coord: ["coordination", "clash", "nwc", "navisworks", "federated"], drawings: ["drawing", "sheet", "document set"], code: ["code"], energy: ["energy"], cost: ["cost", "quantity", "estimate", "takeoff"], "4d": ["4d", "schedule", "sequenc"], ifc: ["ifc", "open exchange"], record: ["record", "as-built", "as built"], cobie: ["cobie", "handover", "facility data", "asset"] };
+function buildMap() {
+  const p = plan, cols = {}; MAP_PHASES.forEach(ph => cols[ph] = []);
+  const goals = p.goals.filter(g => filled(g.goal)).length, ag = p.project.agency, sub = [];
+  if (ag && ag !== "private") sub.push({ gsa: "GSA criteria", usace: "USACE / DoD criteria", va: "VA criteria", federal: "Federal agency criteria", state: "State / local criteria" }[ag] || ag);
+  if (goals) sub.push(`${goals} BIM goal${goals !== 1 ? "s" : ""}`);
+  cols.Planning.push({ id: "req", title: "Owner requirements & goals", sub: sub.join(" · ") });
+  USES.forEach(u => { if (!p.uses[u.id].on) return; const first = u.phase.split(",")[0].trim(); const ph = MAP_PHASES.includes(first) ? first : "Design"; cols[ph].push({ id: "u_" + u.id, title: u.name, sub: (p.uses[u.id].party || "").trim() }); });
+  const usedIdx = MAP_PHASES.map((ph, i) => cols[ph].length ? i : -1).filter(i => i >= 0);
+  for (let i = usedIdx[0]; i <= usedIdx[usedIdx.length - 1]; i++) { const ph = MAP_PHASES[i]; if (!cols[ph].length) cols[ph].push({ id: "stub_" + ph.toLowerCase(), title: ph, sub: "No BIM uses selected for this phase", stub: true }); }
+  const edges = []; let prev = null;
+  MAP_PHASES.forEach(ph => { const n = cols[ph]; if (!n.length) return; if (prev) edges.push({ from: prev.id, to: n[0].id, labels: [] }); n.slice(1).forEach(o => edges.push({ from: n[0].id, to: o.id, labels: [] })); prev = n[0]; });
+  const into = {}; edges.forEach(e => into[e.to] = e);
+  const ex = p.exchanges.filter(e => filled(e.what)).map(e => ({ ...e }));
+  if (p.cobie && p.uses.cobie.on && !ex.some(e => /cobie/i.test(e.what))) ex.push({ what: "COBie handover", lod: "", due: "" });
+  const notes = [];
+  ex.forEach(e => {
+    const text = (e.what + " " + (e.content || "")).toLowerCase();
+    const hit = (e.feeds && into["u_" + e.feeds]) ? e.feeds : Object.keys(USE_WORDS).find(id => into["u_" + id] && USE_WORDS[id].some(w => text.includes(w)));
+    const label = [e.what, e.lod, e.due].filter(x => x && x.trim()).join(" · ");
+    if (hit) into["u_" + hit].labels.push(label); else notes.push(label);
+  });
+  return { cols, edges, notes };
+}
+function mapToMermaid(m) {
+  const q = t => String(t).replace(/"/g, "'").replace(/\n/g, "<br/>");
+  const L = ["flowchart LR"];
+  MAP_PHASES.forEach((ph, i) => { const n = m.cols[ph]; if (!n.length) return; L.push(`  subgraph P${i}["${ph}"]`, "    direction TB"); n.forEach(x => L.push(`    ${x.id}["${q(x.title)}${x.sub ? `<br/><small>${q(x.sub)}</small>` : ""}"]`)); L.push("  end"); });
+  m.edges.forEach(e => L.push(e.labels.length ? `  ${e.from} -->|"${q(e.labels.join("; "))}"| ${e.to}` : `  ${e.from} --> ${e.to}`));
+  MAP_PHASES.forEach(ph => m.cols[ph].forEach(x => L.push(`  class ${x.id} ${ph.toLowerCase()}`)));
+  L.push("  classDef planning fill:#eef0ef,stroke:#6b7479", "  classDef design fill:#e3eefb,stroke:#2f6db3", "  classDef construction fill:#fcefe0,stroke:#c26a12", "  classDef operations fill:#e5f4ea,stroke:#2c7a4d");
+  return L.join("\n") + "\n";
+}
+
+/* ---------- Document model → Markdown / HTML ---------- */
+const ISO = { "01": "4.1, 4.2, 8.2.2", "02": "5.3, 7.2", "03": "6.2", "04": "8.1, 8.3.2", "05": "4.4, 8.1", "06": "8.3.3, 8.3.5, 8.4.3", "07": "7.4, 7.5.3, 8.4; change control 6.3, 8.3.6", "08": "7.1.3, 7.1.5", "09": "7.5.2, 8.3.3", "10": "8.3.4, 8.6, 9.1; failed checks 8.7, 10.2", "11": "8.3.5, 8.5.2" };
+const T = (msg) => ({ todo: msg });
+const val = (v, todo) => filled(v) ? v : T(todo);
+
+function buildDoc() {
+  const p = plan, d = [];
+  const sec = (code, title, blocks) => d.push({ code, title, blocks });
+  const onUses = USES.filter(u => p.uses[u.id].on);
+
+  sec("01", "Project information", [{ kv: [
+    ["Project", val(p.project.name, "project name")], ["Owner", val(p.project.owner, "owner")],
+    ["Location", val(p.project.location, "location")], ["Delivery method", val(p.project.delivery, "delivery method")],
+    ["Current phase", val(p.project.phase, "phase")], ["Effective date", val(p.project.start, "date")],
+    ["Governing criteria", AGENCIES[p.project.agency] + (p.project.agency === "usace" ? " — A/E/C Graphics Standard R2.2 applies over NCS" : "")]
+  ] }]);
+
+  const team = p.team.filter(t => filled(t.role) || filled(t.name));
+  sec("02", "Key contacts and roles", team.length ? [{ table: { head: ["Role", "Organization", "Name", "Email"], rows: team.map(t => [val(t.role, "role"), val(t.org, "firm"), val(t.name, "name"), t.email || "—"]) } }] : [{ p: T("list the team and their roles") }]);
+
+  const goals = p.goals.filter(g => filled(g.goal));
+  sec("03", "BIM goals", goals.length ? [{ table: { head: ["Priority", "Goal", "Related BIM uses"], rows: goals.map((g, i) => [String(i + 1), g.goal, val(g.uses, "related uses")]) } }] : [{ p: T("state the project's BIM goals") }]);
+
+  sec("04", "BIM uses", onUses.length ? [{ table: { head: ["BIM use", "Phase", "Responsible", "Value"], rows: onUses.map(u => [u.name, u.phase, val(p.uses[u.id].party, "assign"), val(p.uses[u.id].value, "why")]) } }] : [{ p: T("select BIM uses") }]);
+
+  sec("05", "BIM process", onUses.length ? [{ kv: onUses.map(u => [u.name, val(p.uses[u.id].flow, "describe the flow")]) }] : [{ p: T("describe the process for each BIM use") }]);
+
+  const ex = p.exchanges.filter(e => filled(e.what));
+  const exRows = ex.map(e => [e.what, `${e.from || "?"} → ${e.to || "?"}`, val(e.content, "content"), val(e.lod, "LOD"), val(e.due, "due")]);
+  if (p.cobie && !ex.some(e => /cobie/i.test(e.what))) exRows.push(["COBie facility data", "Contractor → Owner", "Equipment, spaces, zones, systems", "As-built data", T("COBie due date")]);
+  sec("06", "Information exchanges", exRows.length ? [{ table: { head: ["Exchange", "From → To", "Model content", "LOD", "Due"], rows: exRows } }] : [{ p: T("define information exchanges") }]);
+
+  sec("07", "Collaboration procedures", [{ kv: [
+    ["Common data environment", val(p.collab.cde, "where files live")], ["Model sharing", val(p.collab.sharing, "frequency")],
+    ["Coordination meetings", val(p.collab.meetings, "meeting schedule")], ["Shared coordinates", val(p.collab.coords, "coordinate source")],
+    ["Model file naming", val(p.collab.naming, "naming convention")], ["Change control", val(p.collab.changes, "change process")]
+  ] }]);
+
+  const tech = p.tech.filter(t => filled(t.discipline) || filled(t.software));
+  sec("08", "Technology infrastructure", tech.length ? [{ table: { head: ["Discipline", "Software", "Version", "Formats"], rows: tech.map(t => [val(t.discipline, "discipline"), val(t.software, "software"), val(t.version, "version"), t.formats || "—"]) } }] : [{ p: T("list software by discipline") }]);
+
+  const s = p.standards;
+  const SF = { both: "status letters or phase numbers (NCS default; not ISO-conformant)", status: "status letters A D E F M N T X", phase: "phase numbers 1–9", none: "not used" };
+  const prof = profileFor();
+  const opt = [s.level2 && "two-letter disciplines (AD-WALL)", s.minor && "minor groups (A-WALL-FULL)"].filter(Boolean);
+  const layerKv = s.iso13567 ? [
+    ["Layer naming", `NCS format in conceptual conformance with ISO 13567: ${isoTemplate(prof)}, ${isoLength(prof)} characters, unused fields filled with ____. Example: ${isoExample(prof)}`],
+    ["ANNO", "Not used. Annotation codes (TEXT, DIMS, NOTE, NPLT…) go in the annotation field of the element they describe" + (sheetCode() ? `; sheet-level annotation (title blocks, general notes) uses element code ${sheetCode()}, e.g. G-${sheetCode()}-____-TTLB` : "")],
+    ["Status field", s.statusField === "both" ? T("choose status letters or phase numbers (ISO allows one, not both)") : SF[s.statusField]],
+    ["Layer naming system definition file", "ISO 13567-3 definition file delivered with all CAD files"]
+  ] : [
+    ["Layer naming", "Discipline designator + major group required (A-WALL)" + (opt.length ? "; also uses " + opt.join(", ") : "; optional fields not used")],
+    ["Status field", SF[s.statusField] + ({ status: " — e.g. A-WALL-D", phase: " — e.g. A-WALL-2" }[s.statusField] || "")]
+  ];
+  const sheetTxt = { level1: "Level 1 — A-101", level2: "Level 2 discipline modifiers — AD101", campus: "Level 2 building identifiers — AA101" }[s.sheet];
+  const stdBlocks = [{ kv: [
+    ["Governing standard", `U.S. National CAD Standard ${s.ncs}`],
+    ...layerKv,
+    ["Sheet identification", sheetTxt + "; 5 characters, sequence 01–99"],
+    ["Drawing set order", "G H V B C L S A I Q F P D M E W T R X Z O"],
+    ["Plotting", filled(s.plotting) ? `${s.plotting}; NCS line widths 0.13–2.00 mm` : T("plot style file")],
+    ["Schedules", "Minimum columns: Mark, Item Description, Distinguishing Feature; data from the model"]
+  ] }];
+  const codes = disclosureCodes();
+  if (codes.length) stdBlocks.push({ sub: "User-defined codes (Compliance Disclosure Statement)" }, { table: { head: ["Code", "Meaning"], rows: codes.map(c => [c.code, val(c.meaning, "meaning")]) } });
+  if (agencyIsUsace()) stdBlocks.push({ sub: "USACE / DoD overrides (A/E/C Graphics Standard R2.2)" }, { list: [
+    "ANSI D contract sheets (E/F oversized; ISO A1 international)",
+    "Arial, all capitals; 3/32 in. text (building), 1/8 in. (civil); 3/16 in. titles",
+    "Existing conditions screened 20–60%; demolition plans separate",
+    "Revisions: 1, 2, 3 for amendments; A, B, C for modifications",
+    p.project.cui === "yes" ? "Drawings contain CUI: mark top and bottom of every sheet and add the cover designation block" : p.project.cui === "no" ? "Drawings do not contain CUI" : T("CUI decision")
+  ] });
+  if (filled(s.notes)) stdBlocks.push({ p: s.notes });
+  sec("09", "CAD and BIM standards", stdBlocks);
+
+  const checkRows = QC_CHECKS.map(c => [c.name, c.purpose, val(p.checks[c.id].tool, "tool"), val(p.checks[c.id].who, "assign"), val(p.checks[c.id].freq, "frequency")]);
+  const ruleRows = [...QC_AUTHOR.map((r, i) => ["a" + i, r]), ...QC_DELIVER.map((r, i) => ["d" + i, r])].filter(([k]) => p.qc[k].on).map(([k, r]) => [r, p.qc[k].who || "BIM manager", p.qc[k].freq || "Before each model share"]);
+  sec("10", "Quality control", [{ table: { head: ["Check", "Purpose", "Tool", "Responsible", "Frequency"], rows: checkRows } }, { sub: "Model rules (NCS BIM Implementation)" }, { table: { head: ["Rule", "Responsible", "When"], rows: ruleRows } }]);
+
+  const del = p.deliver.filter(x => filled(x.item)).map(x => [x.item, val(x.format, "format"), val(x.due, "due")]);
+  if (p.cobie && !del.some(r => /cobie/i.test(r[0]))) del.push(["COBie workbook", "XLSX / IFC COBie", T("due date")]);
+  sec("11", "Model structure and deliverables", del.length ? [{ table: { head: ["Deliverable", "Format", "Due"], rows: del } }] : [{ p: T("list final deliverables") }]);
+
+  return d;
+}
+
+function countTodos(doc) {
+  let n = 0;
+  const walk = x => { if (x && typeof x === "object") { if ("todo" in x) n++; else Object.values(x).forEach(walk); } };
+  walk(doc); return n;
+}
+const cellMd = v => (v && v.todo ? `**TODO: ${v.todo}**` : String(v ?? "")).replace(/\|/g, "\\|").replace(/\n/g, " ");
+const cellHtml = v => (v && v.todo ? `<span class="todo">TODO: ${esc(v.todo)}</span>` : esc(v).replace(/\n/g, "<br>"));
+
+function docToMd(doc) {
+  const p = plan, out = [`# BIM Execution Plan — ${p.project.name || "Untitled project"}`, ""];
+  out.push(`Prepared with the BIM Execution Plan Builder · ${new Date().toISOString().slice(0, 10)}`, "");
+  doc.forEach(s => {
+    out.push(`## ${s.code}. ${s.title}`, "");
+    if (p.project.iso) out.push(`*ISO 9001:2015 — ${ISO[s.code]}*`, "");
+    if (s.code === "05" && USES.some(u => p.uses[u.id].on)) out.push("**Level 1 process map**", "", "```mermaid", mapToMermaid(buildMap()).trimEnd(), "```", "");
+    s.blocks.forEach(b => {
+      if (b.p) out.push(cellMd(b.p), "");
+      if (b.sub) out.push(`### ${b.sub}`, "");
+      if (b.list) { b.list.forEach(i => out.push(`- ${cellMd(i)}`)); out.push(""); }
+      if (b.kv) { b.kv.forEach(([k, v]) => out.push(`- **${k}:** ${cellMd(v)}`)); out.push(""); }
+      if (b.table) {
+        out.push(`| ${b.table.head.join(" | ")} |`, `|${b.table.head.map(() => "---").join("|")}|`);
+        b.table.rows.forEach(r => out.push(`| ${r.map(cellMd).join(" | ")} |`)); out.push("");
+      }
+    });
+  });
+  out.push("## Sources", "", `- U.S. National CAD Standard — ${HELP.ncs}`, `- BIM Project Execution Planning Guide (Penn State) — ${HELP.psu}`);
+  if (agencyIsUsace()) out.push(`- A/E/C Graphics Standard R2.2 — ${HELP.usace}`);
+  return out.join("\n");
+}
+function docToHtml(doc, standalone) {
+  const p = plan;
+  let h = `<h2>BIM Execution Plan — ${esc(p.project.name || "Untitled project")}</h2>`;
+  doc.forEach(s => {
+    h += `<h3>${s.code}. ${esc(s.title)}</h3>`;
+    if (p.project.iso) h += `<p class="isotag">ISO 9001:2015 — ${esc(ISO[s.code])}</p>`;
+    s.blocks.forEach(b => {
+      if (b.p) h += `<p>${cellHtml(b.p)}</p>`;
+      if (b.sub) h += `<p><b>${esc(b.sub)}</b></p>`;
+      if (b.list) h += `<ul>${b.list.map(i => `<li>${cellHtml(i)}</li>`).join("")}</ul>`;
+      if (b.kv) h += `<ul>${b.kv.map(([k, v]) => `<li><b>${esc(k)}:</b> ${cellHtml(v)}</li>`).join("")}</ul>`;
+      if (b.table) h += `<div class="tablewrap"><table><thead><tr>${b.table.head.map(x => `<th>${esc(x)}</th>`).join("")}</tr></thead><tbody>${b.table.rows.map(r => `<tr>${r.map(c => `<td>${cellHtml(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    });
+  });
+  if (!standalone) return h;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BEP — ${esc(p.project.name || "Untitled")}</title><style>body{font:15px/1.55 Arial,Helvetica,sans-serif;color:#16212a;max-width:900px;margin:32px auto;padding:0 20px}h2{text-transform:uppercase}h3{border-bottom:1px solid #ccc;padding-bottom:4px;margin-top:28px}table{border-collapse:collapse;width:100%;font-size:14px;margin:8px 0}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;vertical-align:top}th{background:#eef2f1}.todo{color:#c2361f;font-weight:bold}.isotag{color:#56646e;font:12px monospace}</style></head><body>${h}</body></html>`;
+}
+
+/* ---------- NCS name checker (port of check_names.py) ---------- */
+const DISC = new Set("GHVBCLSAIQFPDMEWTRXZO".split(""));
+const STATUS = new Set("ADEFMNTX123456789".split(""));
+const CODE = /^[A-Z0-9~]{4}$/;
+const SHEET = /^(?:([A-Z])[-_]|([A-Z]{2}))([0-9])([0-9]{2})(?:-([A-Z0-9]{1,3}))?$/;
+function checkLayer(n, sf = "both") {
+  if (/[ _]/.test(n)) return ["separate fields with hyphens, not underscores or spaces"];
+  const pr = []; if (n !== n.toUpperCase()) pr.push("use uppercase only");
+  const f = n.toUpperCase().split("-"), d = f[0], rest = f.slice(1);
+  if (d.length < 1 || d.length > 2 || !DISC.has(d[0]) || !/^[A-Z]+$/.test(d)) pr.push(`'${d}' is not a known discipline designator`);
+  if (!rest.length) return [...pr, "missing the 4-character major group"];
+  if (rest.length > 1 && rest[rest.length - 1].length === 1) {
+    const st = rest.pop();
+    if (!STATUS.has(st)) pr.push(`'${st}' is not a valid status code`);
+    else if (sf === "none") pr.push(`this project doesn't use a status field; remove '-${st}'`);
+    else if (sf === "status" && PHASES.has(st)) pr.push(`'${st}' is a phase number; this project uses status letters`);
+    else if (sf === "phase" && LETTERS.has(st)) pr.push(`'${st}' is a status letter; this project uses phase numbers`);
+  }
+  const [maj, ...min] = rest;
+  if (!CODE.test(maj)) pr.push(`major group '${maj}' must be exactly 4 letters, digits or ~`);
+  if (min.length > 2) pr.push("no more than two minor groups are allowed");
+  min.forEach(m => { if (!CODE.test(m)) pr.push(`minor group '${m}' must be exactly 4 letters, digits or ~`); });
+  return pr;
+}
+function checkSheet(n) {
+  const u = n.toUpperCase(), m = u.match(SHEET);
+  if (!m) {
+    if (/^[A-Z][0-9]{3}/.test(u)) return ["a 1-letter discipline needs a hyphen (e.g. S-501)"];
+    if (/^[A-Z]{2}-[0-9]/.test(u)) return ["a 2-letter discipline takes no hyphen (e.g. AD101)"];
+    if (/^[A-Z]{1,2}-?[0-9]{4,}/.test(u)) return ["sequence number must be exactly 2 digits (01–99)"];
+    return ["doesn't match the 5-character sheet format (A-101 or AD101)"];
+  }
+  const pr = [], letter = m[1] || m[2][0];
+  if (n !== u) pr.push("use uppercase only");
+  if (!DISC.has(letter)) pr.push(`'${letter}' is not a known discipline designator`);
+  if (m[4] === "00") pr.push("sequence 00 isn't permitted; start at 01");
+  return pr;
+}
+function runChecker() {
+  const names = ($("#checker-input").value || "").split(/[\s,]+/).filter(Boolean).slice(0, 300);
+  const out = $("#checker-out");
+  if (!names.length) { out.innerHTML = `<p class="hint">Paste at least one name first.</p>`; return; }
+  const iso = plan.standards.iso13567, prof = profileFor(), sf = plan.standards.statusField;
+  const rows = names.map(n => { const sheet = /^[A-Za-z]{1,2}[-_]?\d/.test(n); const pr = sheet ? checkSheet(n) : iso ? isoCheck(n, prof) : checkLayer(n, sf); return `<tr><td class="mono">${esc(n)}</td><td>${sheet ? "Sheet" : "Layer"}</td><td class="${pr.length ? "check-bad" : "check-ok"}">${pr.length ? "Fix" : "OK"}</td><td>${esc(pr.join("; ") || "—")}</td></tr>`; }).join("");
+  out.innerHTML = `<div class="tablewrap"><table><thead><tr><th>Name</th><th>Type</th><th>Result</th><th>Problem</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+/* ---------- Render ---------- */
+function renderIndex() {
+  $("#index").innerHTML = STEPS.map(s => {
+    const st = s.id === "review" ? "" : status(s.id);
+    return `<li><button data-goto="${s.id}"${s.id === current ? ' aria-current="step"' : ""}><span class="code">${s.code}</span><span>${s.name}</span>${s.id === "review" ? "<span></span>" : `<span class="pip ${st}" aria-label="${st === "done" ? "complete" : st === "partial" ? "in progress" : "not started"}"></span>`}</button></li>`;
+  }).join("");
+  const done = STEPS.filter(s => s.id !== "review" && status(s.id) === "done").length;
+  $("#progress-text").textContent = `${done} of 11 sections complete`;
+  $("#progress-bar").style.width = Math.round(done / 11 * 100) + "%";
+}
+function renderTitle() {
+  const p = plan.project, step = STEPS.find(s => s.id === current);
+  $("#tb-project").textContent = p.name || "Untitled project";
+  $("#tb-owner").textContent = [p.owner, p.location].filter(Boolean).join(" · ") || "BIM Execution Plan";
+  $("#tb-agency").textContent = `NCS ${plan.standards.ncs.split(" ")[0]}` + (p.agency !== "private" ? ` + ${AGENCIES[p.agency]}` : "");
+  $("#tb-flags").textContent = [p.iso ? "ISO 9001 aligned" : "", p.cui === "yes" ? "CUI" : "", plan.cobie ? "COBie handover" : ""].filter(Boolean).join(" · ") || " ";
+  $("#tb-sheet").textContent = step.code;
+  $("#tb-sheetname").textContent = step.name;
+}
+function renderStatus() {
+  const map = { connecting: ["busy", "Connecting"], shared: ["live", "Shared plan"], local: ["off", "This browser only"], readonly: ["live", "View only"] };
+  let [cls, txt] = map[mode];
+  if (mode === "shared" && (saving || saveTimer)) { cls = "busy"; txt = "Saving…"; }
+  $("#tb-status").innerHTML = `<span class="syncdot ${cls}"></span>${txt}`;
+  renderEdited();
+}
+async function renderEdited() {
+  const el = $("#tb-edited");
+  if (!meta.updatedAt) { el.textContent = mode === "local" ? "Changes stay on this device" : " "; return; }
+  let who = "Someone";
+  if (meta.updatedBy && userCap) { try { const ps = await userCap.profiles([meta.updatedBy]); who = meta.updatedBy === myId ? "You" : (ps[meta.updatedBy]?.name || "A teammate"); } catch (e) {} }
+  else if (meta.updatedBy && meta.updatedBy === myId) who = "You";
+  el.textContent = `Edited by ${who}, ${new Date(meta.updatedAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
+}
+function renderBanner() {
+  const b = $("#banner");
+  if (pendingRemote) { b.className = "banner"; b.innerHTML = `<span>A teammate updated the plan while you were typing.</span><button class="btn small" data-action="load-remote">Load their changes</button>`; b.hidden = false; return; }
+  if (mode === "local") { b.className = "banner alert"; b.innerHTML = `<span>Shared saving isn't available here, so this plan is saved in this browser only. Export it from Review &amp; export to keep a copy.</span>`; b.hidden = false; return; }
+  if (mode === "readonly") { b.className = "banner"; b.innerHTML = `<span>You can view this plan. Ask the owner for edit access to make changes.</span>`; b.hidden = false; return; }
+  b.hidden = true;
+}
+function renderSheet() {
+  const step = STEPS.find(s => s.id === current);
+  const i = STEPS.indexOf(step), prev = STEPS[i - 1], next = STEPS[i + 1];
+  const isoTag = plan.project.iso && step.iso ? `<span class="iso">ISO 9001 · ${step.iso}</span>` : "";
+  $("#sheet").innerHTML = `
+    <div class="sheet-head"><div class="eyebrow"><span>Section ${step.code}</span>${isoTag}</div><h1>${step.name}</h1><p class="lede">${step.lede}</p></div>
+    ${R[step.id]()}
+    <div class="nav">${prev ? `<button class="btn ghost" data-goto="${prev.id}">← ${prev.code} ${prev.name}</button>` : "<span></span>"}${next ? `<button class="btn primary" data-goto="${next.id}">${next.code} ${next.name} →</button>` : ""}</div>`;
+}
+function renderAll() { renderIndex(); renderTitle(); renderSheet(); renderStatus(); renderBanner(); }
+function renderLight() { renderIndex(); renderTitle(); renderStatus(); }
+
+/* ---------- Saving ---------- */
+const LS_KEY = "bep-builder-plan";
+function normalize(p) {
+  if (p && p.standards && !("statusField" in p.standards) && p.standards.status === false) p.standards.statusField = "none";
+  const base = blankPlan();
+  const merge = (b, x) => { if (x == null || typeof b !== "object" || Array.isArray(b)) return x ?? b; const o = { ...b }; for (const k in x) o[k] = (k in b) ? merge(b[k], x[k]) : x[k]; return o; };
+  return merge(base, p || {});
+}
+function scheduleSave() {
+  lastLocalEdit = Date.now();
+  if (mode === "local") { try { localStorage.setItem(LS_KEY, JSON.stringify(plan)); } catch (e) {} return; }
+  if (mode !== "shared") return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flush, 900);
+  renderStatus();
+}
+async function flush() {
+  saveTimer = null;
+  if (saving) { saveQueued = true; return; }
+  saving = true; renderStatus();
+  plan.standards.status = plan.standards.statusField !== "none";
+  const body = { plan: JSON.parse(JSON.stringify(plan)), updatedBy: myId, updatedAt: new Date().toISOString(), clientId };
+  try { await planRef.set(body); meta = { updatedBy: myId, updatedAt: body.updatedAt }; }
+  catch (e) {
+    if (e && e.code === "invalid_argument") { canWrite = false; mode = "readonly"; renderAll(); toast("This plan is view-only for you, so changes weren't saved."); }
+    else if (e && e.code === "quota_exceeded") toast("The plan is too large to save. Remove some rows and try again.");
+    else if (e && e.code === "unavailable") { setTimeout(() => scheduleSave(), 1500 + Math.random() * 1000); }
+    else { mode = "local"; try { localStorage.setItem(LS_KEY, JSON.stringify(plan)); } catch (x) {} renderAll(); }
+  }
+  saving = false;
+  if (saveQueued) { saveQueued = false; flush(); }
+  renderStatus();
+}
+function onRemote(snap) {
+  if (!snap.exists) { if (mode === "connecting") { mode = canWrite ? "shared" : "readonly"; renderAll(); } return; }
+  const d = snap.data();
+  if (mode === "connecting") mode = canWrite ? "shared" : "readonly";
+  if (d.clientId === clientId) { meta = { updatedBy: d.updatedBy, updatedAt: d.updatedAt }; renderStatus(); return; }
+  const idle = Date.now() - lastLocalEdit > 4000 && !saveTimer && !saving;
+  if (idle) { plan = normalize(d.plan); meta = { updatedBy: d.updatedBy, updatedAt: d.updatedAt }; pendingRemote = null; renderAll(); }
+  else { pendingRemote = d; renderBanner(); }
+}
+
+/* ---------- Events ---------- */
+document.addEventListener("input", e => {
+  const el = e.target; const path = el.dataset && el.dataset.path; if (!path || !canWrite) return;
+  if (el.type === "checkbox" || el.type === "radio" || el.tagName === "SELECT") return;
+  setPath(plan, path, el.value); scheduleSave(); renderLight();
+});
+document.addEventListener("change", e => {
+  const el = e.target; const path = el.dataset && el.dataset.path; if (!path || !canWrite) return;
+  if (el.type === "checkbox") setPath(plan, path, el.checked);
+  else if (el.type === "radio") { if (el.checked) setPath(plan, path, el.value); }
+  else if (el.tagName === "SELECT") setPath(plan, path, el.value);
+  else return;
+  scheduleSave();
+  const structural = /^uses\.\w+\.on$|^project\.agency$|^project\.iso$|^cobie$|^team\.|^standards\.(iso13567|statusField|layerFormat|level2)$/.test(path);
+  if (structural) { const y = window.scrollY; renderAll(); window.scrollTo(0, y); const again = document.getElementById(el.id); if (again) again.focus({ preventScroll: true }); }
+  else renderLight();
+});
+document.addEventListener("click", async e => {
+  const g = e.target.closest("[data-goto]");
+  if (g) { current = g.dataset.goto; confirmReset = confirmExample = false; renderAll(); $("#sheet").scrollIntoView({ block: "start", behavior: "smooth" }); try { localStorage.setItem("bep-builder-step", current); } catch (x) {} return; }
+  const a = e.target.closest("[data-action]"); if (!a) return;
+  const act = a.dataset.action;
+  if (act === "add" && canWrite) {
+    const list = getPath(plan, a.dataset.list);
+    const tmpl = { team: { role: "", org: "", name: "", email: "" }, goals: { goal: "", uses: "" }, exchanges: { what: "", from: "", to: "", content: "", lod: "", due: "" }, tech: { discipline: "", software: "", version: "", formats: "" }, deliver: { item: "", format: "", due: "" }, "standards.codes": { code: "", meaning: "" } }[a.dataset.list];
+    list.push({ ...tmpl }); scheduleSave(); renderAll();
+    const rows = document.querySelectorAll(`[data-path^="${a.dataset.list}.${list.length - 1}."]`); if (rows[0]) rows[0].focus();
+  }
+  if (act === "remove" && canWrite) { getPath(plan, a.dataset.list).splice(+a.dataset.index, 1); scheduleSave(); renderAll(); }
+  if (act === "check") runChecker();
+  if (act === "convert") runConvert();
+  if (act === "copy-map") {
+    const t = mapToMermaid(buildMap());
+    try { await navigator.clipboard.writeText(t); toast("Process map copied"); }
+    catch (x) { toast("Copying isn't allowed here. The map is included in the Markdown export."); }
+  }
+  if (act === "definition") {
+    const t = isoDefinition(profileFor());
+    try { await navigator.clipboard.writeText(t); toast("Definition file copied"); }
+    catch (x) { $("#convert-out").innerHTML = `<p class="hint">Copying isn't allowed here. Select the text below and copy it.</p><textarea readonly style="min-height:160px">${esc(t)}</textarea>`; $("#convert-out textarea").select(); }
+  }
+  if (act === "definition-save") {
+    if (!downloads) { toast("Downloads aren't available here. Use Copy definition file instead."); return; }
+    const slug = (plan.project.name || "project").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "project";
+    try { const r = await downloads.save({ filename: `${slug}-layer-definition.txt`, data: isoDefinition(profileFor()) }); if (r.status === "saved") toast("Saved"); }
+    catch (x) { if (x && x.code !== "declined") toast("Saving files isn't available here. Use Copy definition file instead."); }
+  }
+  if (act === "example") { confirmExample = true; renderSheet(); }
+  if (act === "example-no") { confirmExample = false; renderSheet(); }
+  if (act === "example-yes") { plan = examplePlan(); confirmExample = false; scheduleSave(); renderAll(); toast("Example project loaded"); }
+  if (act === "reset") { confirmReset = true; renderSheet(); }
+  if (act === "reset-no") { confirmReset = false; renderSheet(); }
+  if (act === "reset-yes") { plan = blankPlan(); confirmReset = false; scheduleSave(); current = "project"; renderAll(); toast("Plan cleared"); }
+  if (act === "load-remote" && pendingRemote) { plan = normalize(pendingRemote.plan); meta = { updatedBy: pendingRemote.updatedBy, updatedAt: pendingRemote.updatedAt }; pendingRemote = null; renderAll(); }
+  if (act === "copy-md") {
+    const md = docToMd(buildDoc());
+    try { await navigator.clipboard.writeText(md); toast("Copied as Markdown"); }
+    catch (x) { const n = $("#export-note"); n.innerHTML = `Copying isn't allowed here. Select the text below and copy it.<textarea readonly style="margin-top:8px;min-height:160px">${esc(md)}</textarea>`; n.querySelector("textarea").select(); }
+  }
+  if (act === "save-md" || act === "save-html") {
+    const isMd = act === "save-md";
+    const slug = (plan.project.name || "bim-execution-plan").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "bep";
+    const data = isMd ? docToMd(buildDoc()) : docToHtml(buildDoc(), true);
+    if (!downloads) { toast("Downloads aren't available here. Use Copy as Markdown instead."); return; }
+    try { const r = await downloads.save({ filename: `${slug}-bep.${isMd ? "md" : "html"}`, data }); if (r.status === "saved") toast("Saved"); }
+    catch (x) { if (x && x.code === "declined") return; if (x && x.code === "rate_limited") toast("A save prompt is already open."); else toast("Saving files isn't available here. Use Copy as Markdown instead."); }
+  }
+});
+
+/* ---------- Boot ---------- */
+try { const s = localStorage.getItem("bep-builder-step"); if (s && STEPS.some(x => x.id === s)) current = s; } catch (e) {}
+renderAll();
+
+(async function boot() {
+  const c = window.claude;
+  if (!c || !c.use) { useLocal(); return; }
+  const [dbNs, userNs, dl] = await Promise.all([c.use("db").catch(() => null), c.use("user").catch(() => null), c.use("downloads").catch(() => null)]);
+  downloads = dl; userCap = userNs;
+  if (userNs) { try { myId = await userNs.id(); const w = await userNs.can("data.write"); if (w === false) canWrite = false; } catch (e) {} }
+  if (!dbNs) { useLocal(); return; }
+  db = dbNs; planRef = db.doc("bep/plan");
+  mode = canWrite ? "connecting" : "readonly";
+  planRef.onSnapshot(onRemote, err => { if (err && (err.code === "revoked" || err.code === "unavailable")) { mode = "local"; renderAll(); } });
+  setTimeout(() => { if (mode === "connecting") { mode = canWrite ? "shared" : "readonly"; renderAll(); } }, 6000);
+})();
+
+function useLocal() {
+  mode = "local";
+  try { const raw = localStorage.getItem(LS_KEY); if (raw) plan = normalize(JSON.parse(raw)); } catch (e) {}
+  renderAll();
+}
+</script>

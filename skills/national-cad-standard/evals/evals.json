@@ -1,0 +1,8 @@
+{
+  "skill_name": "national-cad-standard",
+  "evals": [
+    {"id": 1, "prompt": "our intern set up layers like a-wall, A_DOOR, E-LITE-EMRG-N and M-HVAC-DCT. are these ok per NCS? fix whatever's wrong", "expected_output": "Audit table from check_names.py with plain-language fixes", "files": []},
+    {"id": 2, "prompt": "Write the CAD and BIM standards section for our BEP. 3-story clinic, Revit 2026, architectural + MEP + structural, we follow NCS V7.", "expected_output": "BEP section with NCS layer/sheet/set-order conventions and Autodesk Product Help links for Revit export layer mapping", "files": []},
+    {"id": 3, "prompt": "How do I make Revit export DWGs with NCS layer names?", "expected_output": "Steps sourced from Autodesk Product Help with URLs, note that AIA mapping needs project edits", "files": []}
+  ]
+}

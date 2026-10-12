@@ -1,0 +1,8 @@
+{
+  "skill_name": "whole-building-design-guide",
+  "evals": [
+    {"id": 1, "prompt": "We just won a GSA courthouse renovation. What BIM deliverables does GSA expect, and where's the source?", "expected_output": "Cited GSA BIM Guide / P100 requirements from wbdg.org or gsa.gov with versions", "files": []},
+    {"id": 2, "prompt": "Help me set up a BIM execution plan for a VA outpatient clinic, design-bid-build, Revit + Navisworks. Owner wants COBie at handover.", "expected_output": "BEP following bep-outline.md, VA criteria cited, COBie exchange, TODOs for unknowns, Autodesk help links", "files": []},
+    {"id": 3, "prompt": "what's COBie and when in the project do we have to deliver it?", "expected_output": "Plain explanation with NBIMS-US citation", "files": []}
+  ]
+}

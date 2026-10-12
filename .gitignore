@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+*-workspace/
+.DS_Store
+# Licensed standards and project data stay out of this public repository
+*.numbers
+*.pdf
+plans/
