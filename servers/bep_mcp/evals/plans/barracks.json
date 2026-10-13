@@ -1,0 +1,265 @@
+{
+  "v": 1,
+  "project": {
+    "name": "EXAMPLE — Barracks renovation",
+    "owner": "",
+    "location": "Example installation",
+    "delivery": "",
+    "agency": "usace",
+    "phase": "",
+    "start": "",
+    "cui": "",
+    "iso": false
+  },
+  "team": [
+    {
+      "role": "BIM manager",
+      "org": "",
+      "name": "",
+      "email": ""
+    }
+  ],
+  "goals": [
+    {
+      "goal": "",
+      "uses": ""
+    }
+  ],
+  "uses": {
+    "existing": {
+      "on": false,
+      "party": "",
+      "value": "",
+      "flow": ""
+    },
+    "authoring": {
+      "on": false,
+      "party": "",
+      "value": "",
+      "flow": ""
+    },
+    "review": {
+      "on": false,
+      "party": "",
+      "value": "",
+      "flow": ""
+    },
+    "coord": {
+      "on": true,
+      "party": "BIM manager",
+      "value": "",
+      "flow": ""
+    },
+    "drawings": {
+      "on": false,
+      "party": "",
+      "value": "",
+      "flow": ""
+    },
+    "code": {
+      "on": false,
+      "party": "",
+      "value": "",
+      "flow": ""
+    },
+    "energy": {
+      "on": false,
+      "party": "",
+      "value": "",
+      "flow": ""
+    },
+    "cost": {
+      "on": false,
+      "party": "",
+      "value": "",
+      "flow": ""
+    },
+    "4d": {
+      "on": true,
+      "party": "",
+      "value": "",
+      "flow": ""
+    },
+    "ifc": {
+      "on": false,
+      "party": "",
+      "value": "",
+      "flow": ""
+    },
+    "record": {
+      "on": false,
+      "party": "",
+      "value": "",
+      "flow": ""
+    },
+    "cobie": {
+      "on": false,
+      "party": "",
+      "value": "",
+      "flow": ""
+    }
+  },
+  "exchanges": [
+    {
+      "what": "",
+      "from": "",
+      "to": "",
+      "content": "",
+      "lod": "",
+      "due": "",
+      "feeds": ""
+    }
+  ],
+  "cobie": false,
+  "collab": {
+    "cde": "",
+    "sharing": "",
+    "meetings": "",
+    "coords": "",
+    "naming": "",
+    "changes": ""
+  },
+  "tech": [
+    {
+      "discipline": "Architectural",
+      "software": "",
+      "version": "",
+      "formats": ""
+    }
+  ],
+  "standards": {
+    "ncs": "V7 (2024)",
+    "level2": false,
+    "minor": true,
+    "status": true,
+    "sheet": "level1",
+    "codes": [],
+    "plotting": "",
+    "notes": "",
+    "statusField": "status",
+    "iso13567": false,
+    "layerFormat": "element",
+    "sheetCode": "SHET"
+  },
+  "qc": {
+    "a0": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "a1": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "a2": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "a3": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "a4": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "a5": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "a6": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "a7": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "a8": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "d0": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "d1": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "d2": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "d3": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "d4": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "d5": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "d6": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "d7": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "d8": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    }
+  },
+  "checks": {
+    "visual": {
+      "tool": "",
+      "who": "",
+      "freq": ""
+    },
+    "clash": {
+      "tool": "",
+      "who": "",
+      "freq": ""
+    },
+    "standards": {
+      "tool": "",
+      "who": "",
+      "freq": ""
+    },
+    "integrity": {
+      "tool": "",
+      "who": "",
+      "freq": ""
+    }
+  },
+  "deliver": [
+    {
+      "item": "",
+      "format": "",
+      "due": ""
+    }
+  ]
+}

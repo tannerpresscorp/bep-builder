@@ -28,7 +28,7 @@ python tests/test_bep.py
 python tests/test_mcp.py
 ```
 
-You should see 15 `PASS` lines, then 8 more, and no `skipped`. In a Codespace or dev container, all of this is already installed.
+You should see 15 `PASS` lines, then 9 more, and no `skipped`. In a Codespace or dev container, all of this is already installed.
 
 ## Run one test
 
@@ -159,5 +159,5 @@ Then, in Claude Code, ask for something like "create an example plan called demo
 1. If the tool needs new plan logic, add it to `bep.py` as a plain function that returns data and raises `ValueError` for bad input. Make the CLI command a thin wrapper around it, so both share one rule.
 2. Add the tool in `create_server()` in `servers/bep_mcp/bep_mcp/server.py`, with the `@_logged` decorator and the right annotation: `READ`, `EDIT` or `DESTRUCTIVE`. Take the plan as a file name and resolve it with `resolve_plan`; write through `_edit` so the change holds the write lock.
 3. Name it `bep_<verb>_<noun>` and write the description for the model: what it does, what to call first, and what each argument accepts.
-4. In `tests/test_mcp.py`, add the tool to `test_tool_list_and_annotations` and compare its output with the matching CLI command.
+4. In `tests/test_mcp.py`, add the tool to `test_tool_list_and_annotations` and compare its output with the matching CLI command. If you change what an existing tool returns, `test_eval_answers_match_the_fixtures` tells you whether an evaluation answer in `servers/bep_mcp/evals/evals.xml` has changed too.
 5. List it in `servers/bep_mcp/README.md` and in [reference.md](reference.md#mcp-server).

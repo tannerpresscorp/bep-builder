@@ -17,7 +17,7 @@ A guide for new contributors to bep-builder. Each page has a single job:
 - **Three front ends, one file format:** a web app (`app/index.html`), a Python CLI (`skills/bep-builder-cli/scripts/bep.py`) and Claude skills (`skills/*/`) all work on the same plan JSON. An MCP server (`servers/bep_mcp/`) gives Claude the CLI's operations as tools.
 - **Almost no build, almost no dependencies:** the app is one HTML file; the only build step is a small script that wraps it for GitHub Pages. The CLI is Python standard library, plus openpyxl and defusedxml for spreadsheets. Node is only needed to run some tests. A dev container sets all of this up in Codespaces.
 - **The one rule that trips people up:** the app re-implements the Python logic in JavaScript. Most behaviour changes have to be made in both languages, and some modules are copied between skills. See [Logic that exists twice](reference.md#logic-that-exists-twice).
-- **Checking your work:** `python tests/test_bep.py` runs all 15 tests, and `python tests/test_mcp.py` runs the MCP server's 8. Install Node, openpyxl and `mcp`, or some checks are skipped quietly. CI runs the same suite on Linux and Windows.
+- **Checking your work:** `python tests/test_bep.py` runs all 15 tests, and `python tests/test_mcp.py` runs the MCP server's 9. Install Node, openpyxl and `mcp`, or some checks are skipped quietly. CI runs the same suite on Linux and Windows.
 - **Deployment:** merging a change to `app/` (or `tools/build_pages.py`) on `master` publishes it to <https://tannerpresscorp.github.io/bep-builder/>.
 - **Licensing:** never add NCS text to the repository (see [Licensing](architecture.md#licensing)).
 

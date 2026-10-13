@@ -9,3 +9,4 @@ __pycache__/
 plans/
 _site/
 *.egg-info/
+!servers/bep_mcp/evals/plans/

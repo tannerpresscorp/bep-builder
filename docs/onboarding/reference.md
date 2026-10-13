@@ -26,7 +26,7 @@ Facts about the repository, to look up rather than read through. For *why* thing
 | `skills/*/SKILL.md` | The skill's instructions. Its YAML front matter (`name`, `description`) is what Claude reads to decide when to use the skill. |
 | `skills/*/evals/evals.json` | Example prompts, each with the output expected (`id`, `prompt`, `expected_output`, `files`), for evaluating the skill. No test in this repo runs them. |
 | `examples/example-plan.json` | A complete example plan (11 of 11 sections, 0 TODOs). |
-| `servers/bep_mcp/` | The MCP server: `bep_mcp/server.py`, its `pyproject.toml` (package `bep-mcp`, command `bep_mcp`) and a README listing the tools. |
+| `servers/bep_mcp/` | The MCP server: `bep_mcp/server.py`, its `pyproject.toml` (package `bep-mcp`, command `bep_mcp`), a README listing the tools, and `evals/` (10 evaluation questions with two fixture plans). |
 | `docs/design/` | Design proposals, such as `mcp-server.md`. |
 | `tests/test_bep.py` | The main test suite. |
 | `tests/test_mcp.py` | The MCP server's tests. |
@@ -178,7 +178,7 @@ Identical file copies between skills: `iso13567.py` (bep-builder-cli and nationa
 
 Tests that need Node or openpyxl print `(skipped: ...)` and **pass** when the tool is missing. CI has both, so run them locally with both before pushing.
 
-`python tests/test_mcp.py` runs the MCP server's 8 tests. They need Python 3.10+ and `pip install "mcp>=2,<3"`, and print `skipped` without the SDK.
+`python tests/test_mcp.py` runs the MCP server's 9 tests. They need Python 3.10+ and `pip install "mcp>=2,<3"`, and print `skipped` without the SDK.
 
 | Test | Guards |
 |---|---|
@@ -189,6 +189,7 @@ Tests that need Node or openpyxl print `(skipped: ...)` and **pass** when the to
 | `test_write_tools_refuse_bad_input_and_keep_the_file` | A refused write leaves the plan file untouched; a read-only file gives a clear error (skipped on Windows and as root). |
 | `test_save_document_matches_the_cli` | `bep_save_document` writes the same files as `export -o` and `definition -o`. |
 | `test_concurrent_writes_are_not_lost` | Twenty simultaneous `bep_add_row` calls keep all twenty rows. |
+| `test_eval_answers_match_the_fixtures` | Each answer in `servers/bep_mcp/evals/evals.xml` still matches what the tools return for the fixture plans. |
 | `test_server_needs_a_plans_folder` | The server refuses to start without a valid `BEP_PLANS_DIR`. |
 
 ## MCP server
