@@ -1072,11 +1072,36 @@ function renderLight() { renderIndex(); renderTitle(); renderStatus(); }
 
 /* ---------- Saving ---------- */
 const LS_KEY = "bep-builder-plan";
+// Row templates for the editable lists (port of ROW_TEMPLATES in bep.py).
+const ROW_TEMPLATES = {
+  team: { role: "", org: "", name: "", email: "" },
+  goals: { goal: "", uses: "" },
+  exchanges: { what: "", from: "", to: "", content: "", lod: "", due: "", feeds: "" },
+  tech: { discipline: "", software: "", version: "", formats: "" },
+  deliver: { item: "", format: "", due: "" },
+  "standards.codes": { code: "", meaning: "" }
+};
+// Port of normalize() in bep.py: fill missing keys from the blank plan, repair a section
+// damaged into a scalar, and fill every list row from its template (null fields count as missing).
 function normalize(p) {
-  if (p && p.standards && !("statusField" in p.standards) && p.standards.status === false) p.standards.statusField = "none";
-  const base = blankPlan();
-  const merge = (b, x) => { if (x == null || typeof b !== "object" || Array.isArray(b)) return x ?? b; const o = { ...b }; for (const k in x) o[k] = (k in b) ? merge(b[k], x[k]) : x[k]; return o; };
-  return merge(base, p || {});
+  const isObj = v => v !== null && typeof v === "object" && !Array.isArray(v);
+  if (isObj(p) && isObj(p.standards) && !("statusField" in p.standards) && p.standards.status === false) p.standards.statusField = "none";
+  const merge = (b, x) => {
+    if (x == null) return b;
+    if (!isObj(b)) return x;
+    if (!isObj(x)) return b;
+    const o = { ...b };
+    for (const k of Object.keys(x)) o[k] = Object.hasOwn(b, k) ? merge(b[k], x[k]) : x[k];
+    return o;
+  };
+  const out = merge(blankPlan(), isObj(p) ? p : {});
+  for (const [path, tmpl] of Object.entries(ROW_TEMPLATES)) {
+    const keys = path.split("."), key = keys.pop(), parent = keys.reduce((o, k) => o[k], out);
+    const rows = parent[key];
+    parent[key] = !Array.isArray(rows) ? JSON.parse(JSON.stringify(getPath(blankPlan(), path)))
+      : rows.map(r => isObj(r) ? { ...tmpl, ...Object.fromEntries(Object.entries(r).filter(([, v]) => v != null)) } : { ...tmpl });
+  }
+  return out;
 }
 /* Shared saving writes only what changed, so two people editing different fields don't
    overwrite each other. The db's update() merges nested objects but replaces arrays, so an
@@ -1109,6 +1134,12 @@ function overlayEdits(base, local, paths) {
 function saveLocal() {
   dirty.clear(); fullSave = false;
   try { localStorage.setItem(LS_KEY, JSON.stringify(plan)); } catch (e) {}
+}
+// Switch to browser-only saving (shared store gone): save here and drop any teammate
+// version waiting behind the banner, since it can no longer be loaded and kept.
+function goLocal() {
+  mode = "local"; pendingRemote = false; latestRemote = null;
+  saveLocal(); renderAll();
 }
 function scheduleSave(path) {
   lastLocalEdit = Date.now();
@@ -1149,7 +1180,7 @@ async function flush() {
     else if (code === "invalid_argument") { canWrite = false; mode = "readonly"; renderAll(); toast("This plan is view-only for you, so changes weren't saved."); }
     else if (code === "quota_exceeded") { restore(); toast("The plan is too large to save. Remove some rows and try again."); }
     else if (code === "unavailable") { restore(); saveTimer = setTimeout(flush, 1500 + Math.random() * 1000); }
-    else { mode = "local"; saveLocal(); renderAll(); }
+    else goLocal();
   }
   saving = false; inFlight = []; inFlightFull = false;
   if (saveQueued) { saveQueued = false; await flush(); }
@@ -1223,7 +1254,7 @@ document.addEventListener("click", async e => {
   const act = a.dataset.action;
   if (act === "add" && canWrite) {
     const list = getPath(plan, a.dataset.list);
-    const tmpl = { team: { role: "", org: "", name: "", email: "" }, goals: { goal: "", uses: "" }, exchanges: { what: "", from: "", to: "", content: "", lod: "", due: "" }, tech: { discipline: "", software: "", version: "", formats: "" }, deliver: { item: "", format: "", due: "" }, "standards.codes": { code: "", meaning: "" } }[a.dataset.list];
+    const tmpl = ROW_TEMPLATES[a.dataset.list];
     list.push({ ...tmpl }); scheduleSave(a.dataset.list); renderAll();
     const rows = document.querySelectorAll(`[data-path^="${a.dataset.list}.${list.length - 1}."]`); if (rows[0]) rows[0].focus();
   }
@@ -1279,7 +1310,7 @@ renderAll();
   if (!dbNs) { useLocal(); return; }
   db = dbNs; planRef = db.doc("bep/plan");
   mode = canWrite ? "connecting" : "readonly";
-  planRef.onSnapshot(onRemote, err => { if (err && (err.code === "revoked" || err.code === "unavailable")) { mode = "local"; saveLocal(); renderAll(); } });
+  planRef.onSnapshot(onRemote, err => { if (err && (err.code === "revoked" || err.code === "unavailable")) goLocal(); });
   setTimeout(() => { if (mode === "connecting") { finishConnecting(); renderAll(); } }, 6000);
 })();
 

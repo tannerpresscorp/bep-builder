@@ -391,13 +391,19 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     stored: JSON.parse(__stored[LS_KEY] || "{}").project?.location || null };
   mode = "shared";
 
+  // Falling back to browser-only saving drops a teammate version waiting behind the banner.
+  mode = "shared"; latestRemote = { plan: remote }; pendingRemote = true;
+  goLocal();
+  const localDropsStale = latestRemote === null && pendingRemote === false && mode === "local";
+  mode = "shared";
+
   // A deleted shared plan clears a teammate version still waiting behind the banner.
   latestRemote = { plan: remote }; pendingRemote = true;
   onRemote({ exists: false });
   const staleCleared = latestRemote === null && pendingRemote === false;
   console.log(JSON.stringify({ first, second,
     roots: ["team.1.name", "standards.codes.0.code", "uses.coord.on", "project.name"].map(patchRoot),
-    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared, unknownFirst, connecting, patches, localFallback, committedKept, committedCleared }));
+    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared, unknownFirst, connecting, patches, localFallback, committedKept, committedCleared, localDropsStale }));
 })();
 """)
     if out is None:
@@ -414,12 +420,25 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     assert out["keptCleared"] is True and out["inFlightKept"] is True and out["staleCleared"] is True
     assert out["unknownFirst"] == {"gets": 1, "sets": 0, "updates": 1,                # merged, not overwritten
                                    "keptGoal": "Teammate goal", "phase": "Construction"}
-    assert out["committedKept"] is True and out["committedCleared"] is True
+    assert out["committedKept"] is True and out["committedCleared"] is True and out["localDropsStale"] is True
     assert out["localFallback"] == {"remoteCalls": 0, "dirty": 0, "stored": "Edited during outage"}
     assert out["patches"]["name"] == {"project": {"name": ""}}                # no derived status riding along
     assert out["patches"]["statusField"] == {"standards": {"statusField": "status", "status": True}}
     assert out["connecting"] == {"queuedWhileConnecting": False, "scheduledOnConnect": True, "updates": 1,
                                  "owner": "Typed while connecting", "keptGoal": "Teammate goal"}
+
+
+def test_app_normalize_matches_cli_on_damaged_plans():
+    sys.path.insert(0, str(CLI))
+    import bep as cli
+    damaged = {"standards": "damaged", "collab": "damaged",
+               "team": ["foo", {"role": "BIM manager", "email": None}],
+               "exchanges": [{"what": None, "lod": "LOD 300"}], "goals": "damaged"}
+    out = _node(f"console.log(JSON.stringify(normalize({json.dumps(damaged)})));")
+    if out is None:
+        print("  (skipped: Node.js not installed)")
+        return
+    assert out == cli.normalize(json.loads(json.dumps(damaged)))
 
 
 def test_pages_build_is_a_full_document():

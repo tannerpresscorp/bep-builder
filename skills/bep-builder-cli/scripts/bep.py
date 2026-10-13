@@ -1145,7 +1145,7 @@ def main(argv=None):
     try:
         a.fn(a)
     except PermissionError as e:
-        sys.exit(f"Couldn't save the plan: {e}")
+        sys.exit(f"Permission denied: {e}")
 
 
 if __name__ == "__main__":
