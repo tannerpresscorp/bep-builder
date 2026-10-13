@@ -57,6 +57,12 @@ def test_cli_plan_lifecycle():
     try:
         assert bep("init", d / "p.json", "--agency", "usace")[0] == 0
         assert bep("set", d / "p.json", "project.cui", "maybe")[0] != 0       # validated
+        assert bep("set", d / "p.json", "project.nmae", "X")[0] != 0          # unknown field
+        assert bep("set", d / "p.json", "standards.iso13567", "maybe")[0] != 0  # not yes/no
+        assert bep("show", d / "p.json", "project.zzz")[0] != 0
+        assert bep("remove", d / "p.json", "team", "-1")[0] != 0
+        assert bep("qc", d / "p.json", "visual", "--off")[0] != 0
+        assert bep("qc", d / "p.json", "a0", "--tool", "Revit")[0] != 0
         assert bep("use", d / "p.json", "coord", "--party", "BIM manager")[0] == 0
         code, out = bep("validate", d / "p.json", "--strict")
         assert code == 1 and "TODO items" in out
@@ -140,7 +146,7 @@ if __name__ == "__main__":
         try:
             fn()
             print(f"PASS {name}")
-        except AssertionError as e:
+        except Exception as e:
             failed += 1
-            print(f"FAIL {name}: {e}")
+            print(f"FAIL {name}: {type(e).__name__}: {e}")
     sys.exit(1 if failed else 0)
