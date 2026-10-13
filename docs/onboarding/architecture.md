@@ -16,11 +16,13 @@ flowchart TB
     A["Web app<br/>app/index.html"]
     C["CLI<br/>bep.py"]
     S["Claude skills<br/>skills/*/SKILL.md"]
+    X["MCP server<br/>servers/bep_mcp"]
   end
   P[("Plan JSON")]
   A <--> P
   C <--> P
   S -->|"run"| C
+  X -->|"imports"| C
   P --> E["Markdown / HTML export"]
   P --> M["Process map<br/>Mermaid / tldraw"]
   P <--> W["Maps workbook<br/>.xlsx / .numbers"]
@@ -29,6 +31,7 @@ flowchart TB
 - **The web app** is for people filling in a plan by hand. It walks through the 11 sections like a drawing set: a title block across the top, a sheet index on the left, one sheet open at a time.
 - **The CLI** is for scripts, CI and Claude. Every answer lands in a known field, `validate` lists exactly what's missing, and the plan file can be diffed in a repo.
 - **The skills** tell Claude when and how to use the CLI and the reference material, for example "check these layer names" or "start a BEP for our barracks project".
+- **The MCP server** gives Claude, or any MCP client, the CLI's operations as typed tools instead of shell commands. It imports `bep.py` rather than re-implementing it, so it can't drift from the CLI the way the app could.
 
 All three read and write the same **plan JSON** (fields in [reference.md](reference.md#plan-json)). That shared format is the most important thing to keep stable. A plan exported from the app can be validated with the CLI, and a plan built with the CLI loads in the app. `normalize()` exists on both sides so that plans saved by an older version, which lack newer fields, still load.
 
@@ -85,6 +88,17 @@ Each exchange from section 06 labels the arrow into the BIM use it feeds. That u
 
 The **maps workbook** is the editable side of this model. `maps-workbook` writes the uses and exchanges of one or more plans to `.xlsx`. People edit it in Excel or Apple Numbers, and `apply-maps` reads it back and reports each change. Applying an unchanged workbook is a no-op, and applying the same edits twice gives the same result; the tests check both.
 
+## The MCP server
+
+The server (`servers/bep_mcp/`, design in [docs/design/mcp-server.md](../design/mcp-server.md)) runs on the user's machine over stdio. It is a thin layer over `bep.py`:
+
+- **No rules of its own.** Every CLI command that changes or checks a plan calls a plain function in `bep.py` that returns data and raises `ValueError`. The CLI prints the result or exits with the message; the server returns it as JSON or as an error the model can read and correct. A rule changed in `bep.py` changes both.
+- **One folder of plans.** Tools take a plan's file name, never a path. `resolve_plan` rejects names with folders and anything that resolves outside `BEP_PLANS_DIR`, symlinks included.
+- **One write at a time.** The SDK runs tool calls on threads, so every load → change → save holds one lock. Without it, two quick edits to the same plan could each load the old file and one would be lost.
+- **Hints for the client.** Each tool says whether it is read-only or destructive (`bep_remove_row`, `bep_save_document`, `bep_create_plan` with `overwrite`), so a client can ask before running the risky ones.
+
+It needs Python 3.10 and the `mcp` package, unlike the CLI, which is why it lives in `servers/` rather than inside a skill. The folder is not called `mcp/`, because that name would hide the SDK's own `mcp` package on import.
+
 ## Firm defaults
 
 New plans start with the firm's defaults:
@@ -106,4 +120,4 @@ The only deployed piece is the web app. Whenever `app/` or `tools/build_pages.py
 
 ## Where it runs
 
-CI runs the whole test suite on both Ubuntu and Windows, so the Python code sticks to portable paths and the standard library. A dev container (`.devcontainer/`) gives Codespaces users the same Python 3.12 + Node 20 setup as CI, and `copilot-setup-steps.yml` gives GitHub Copilot's coding agent the same.
+CI runs both test suites on both Ubuntu and Windows, so the Python code sticks to portable paths and the standard library. A dev container (`.devcontainer/`) gives Codespaces users the same Python 3.12 + Node 20 setup as CI, and `copilot-setup-steps.yml` gives GitHub Copilot's coding agent the same.

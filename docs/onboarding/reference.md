@@ -10,6 +10,7 @@ Facts about the repository, to look up rather than read through. For *why* thing
 - [Web app script sections](#web-app-script-sections)
 - [Logic that exists twice](#logic-that-exists-twice)
 - [Tests](#tests)
+- [MCP server](#mcp-server)
 - [CI and deployment](#ci-and-deployment)
 
 ## Repository layout
@@ -25,10 +26,13 @@ Facts about the repository, to look up rather than read through. For *why* thing
 | `skills/*/SKILL.md` | The skill's instructions. Its YAML front matter (`name`, `description`) is what Claude reads to decide when to use the skill. |
 | `skills/*/evals/evals.json` | Example prompts, each with the output expected (`id`, `prompt`, `expected_output`, `files`), for evaluating the skill. No test in this repo runs them. |
 | `examples/example-plan.json` | A complete example plan (11 of 11 sections, 0 TODOs). |
-| `tests/test_bep.py` | The whole test suite. |
+| `servers/bep_mcp/` | The MCP server: `bep_mcp/server.py`, its `pyproject.toml` (package `bep-mcp`, command `bep_mcp`) and a README listing the tools. |
+| `docs/design/` | Design proposals, such as `mcp-server.md`. |
+| `tests/test_bep.py` | The main test suite. |
+| `tests/test_mcp.py` | The MCP server's tests. |
 | `.github/workflows/` | `ci.yml` (tests on Linux and Windows), `pages.yml` (deploys the app) and `copilot-setup-steps.yml` (environment for GitHub Copilot's coding agent). |
 | `.github/dependabot.yml` | Keeps the GitHub Actions versions up to date. |
-| `.devcontainer/devcontainer.json` | Codespaces / dev container: Python 3.12, Node 20, openpyxl and defusedxml, port 8000 forwarded. |
+| `.devcontainer/devcontainer.json` | Codespaces / dev container: Python 3.12, Node 20, openpyxl, defusedxml and `mcp`, port 8000 forwarded. |
 | `SECURITY.md` | How to report a vulnerability. |
 | `workspace/` | Empty folder for local working files. |
 | `CLAUDE.md` | Guidance for Claude Code sessions in this repo. |
@@ -63,7 +67,7 @@ The 11 sections, in order, are: 01 project, 02 team, 03 goals, 04 uses, 05 proce
 
 Run from `skills/bep-builder-cli/scripts/` as `python bep.py COMMAND ...`. Use `python bep.py COMMAND -h` for every option.
 
-The editing and checking commands are thin wrappers around plain functions in `bep.py`'s "plan operations" section: `add_row`, `remove_row`, `set_use`, `set_qc` and `check_names`, alongside `set_path` for `set`. These change the plan or return data and raise `ValueError` with a message for people, so other callers, such as the planned [MCP server](../design/mcp-server.md), behave exactly like the CLI.
+The editing and checking commands are thin wrappers around plain functions in `bep.py`'s "plan operations" section: `add_row`, `remove_row`, `set_use`, `set_qc`, `check_names`, `convert_layers` and `layer_definition`, alongside `set_path` for `set`. These change the plan or return data and raise `ValueError` with a message for people, so other callers, such as the [MCP server](#mcp-server), behave exactly like the CLI.
 
 | Command | Does |
 |---|---|
@@ -174,12 +178,56 @@ Identical file copies between skills: `iso13567.py` (bep-builder-cli and nationa
 
 Tests that need Node or openpyxl print `(skipped: ...)` and **pass** when the tool is missing. CI has both, so run them locally with both before pushing.
 
+`python tests/test_mcp.py` runs the MCP server's 8 tests. They need Python 3.10+ and `pip install "mcp>=2,<3"`, and print `skipped` without the SDK.
+
+| Test | Guards |
+|---|---|
+| `test_tool_list_and_annotations` | The 17 tools exist, with the right read-only and destructive hints. |
+| `test_read_tools_match_the_cli` | Export (Markdown and HTML), the tldraw map and the layer definition equal the CLI's output. |
+| `test_plan_names_cannot_leave_the_plans_folder` | Folder names, `..`, escaping symlinks and unreadable JSON are refused with a clear error. |
+| `test_write_tools_write_what_the_cli_writes` | After each write tool, the plan file is byte-identical to the one the matching CLI command writes. |
+| `test_write_tools_refuse_bad_input_and_keep_the_file` | A refused write leaves the plan file untouched; a read-only file gives a clear error (skipped on Windows and as root). |
+| `test_save_document_matches_the_cli` | `bep_save_document` writes the same files as `export -o` and `definition -o`. |
+| `test_concurrent_writes_are_not_lost` | Twenty simultaneous `bep_add_row` calls keep all twenty rows. |
+| `test_server_needs_a_plans_folder` | The server refuses to start without a valid `BEP_PLANS_DIR`. |
+
+## MCP server
+
+Install with `python -m pip install -e servers/bep_mcp` (editable, from inside the repository, so it finds `bep.py`), then register it with a client, for example `claude mcp add bep -e BEP_PLANS_DIR="$HOME/plans" -- bep_mcp`.
+
+| Setting | Meaning |
+|---|---|
+| `BEP_PLANS_DIR` | Required. The folder whose `*.json` files are the plans the tools can see. |
+| `BEP_CLI_DIR` | Optional. The folder holding `bep.py`, if not this repository's `skills/bep-builder-cli/scripts/`. |
+
+| Tool | CLI equivalent | Kind |
+|---|---|---|
+| `bep_list_plans` | (none) | read |
+| `bep_get_catalog` | `catalog` | read |
+| `bep_get_plan` | (none; reads the JSON) | read |
+| `bep_get_status` | `status` | read |
+| `bep_list_todos` | `validate` | read |
+| `bep_check_names` | `check-names` | read |
+| `bep_convert_layers` | `convert` | read |
+| `bep_get_process_map` | `process-map` | read |
+| `bep_export_plan` | `export` | read |
+| `bep_get_layer_definition` | `definition` | read |
+| `bep_create_plan` | `init` | write; destructive with `overwrite` |
+| `bep_set_value` | `set` | write |
+| `bep_add_row` | `add` | write |
+| `bep_remove_row` | `remove` | destructive |
+| `bep_set_bim_use` | `use` | write |
+| `bep_set_qc` | `qc` | write |
+| `bep_save_document` | `export -o`, `definition -o` | destructive (replaces a file of the same name) |
+
+The server logs one line per tool call to stderr; stdout carries the protocol.
+
 ## CI and deployment
 
 | Workflow | Trigger | Does |
 |---|---|---|
-| `ci.yml` | Every push and pull request | On Ubuntu **and Windows**: Python 3.12 + Node 20, `pip install openpyxl defusedxml`, `python tests/test_bep.py`, then exports the example plan. |
+| `ci.yml` | Every push and pull request | On Ubuntu **and Windows**: Python 3.12 + Node 20, `pip install openpyxl defusedxml "mcp>=2,<3"`, `python tests/test_bep.py`, `python tests/test_mcp.py`, then exports the example plan. |
 | `pages.yml` | Push to `master` that changes `app/**`, `tools/build_pages.py` or the workflow itself, or a manual run | Runs `python3 tools/build_pages.py app/index.html _site/index.html`, uploads `_site/` and deploys it to GitHub Pages: <https://tannerpresscorp.github.io/bep-builder/>. |
-| `copilot-setup-steps.yml` | Changes to itself, or a manual run | Prepares Python, Node, openpyxl and defusedxml for GitHub Copilot's coding agent. |
+| `copilot-setup-steps.yml` | Changes to itself, or a manual run | Prepares Python, Node, openpyxl, defusedxml and `mcp` for GitHub Copilot's coding agent. |
 
 Because CI runs on Windows too, code and tests must not assume POSIX paths or shell commands. Dependabot opens pull requests to update the Actions versions. The repository also runs CodeQL and AI code review (Copilot, Codex) on pull requests; those are GitHub settings, not workflow files in this repository.

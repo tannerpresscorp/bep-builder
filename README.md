@@ -11,6 +11,7 @@ Whole Building Design Guide (WBDG) criteria, and agency overrides.
 | [`skills/national-cad-standard`](skills/national-cad-standard) | NCS layer/sheet checker, ISO 13567 profile checker and converter, USACE A/E/C Graphics Standard overrides. |
 | [`skills/whole-building-design-guide`](skills/whole-building-design-guide) | WBDG / NBIMS-US lookup workflow, BEP outline, ISO 9001 clause alignment. |
 | [`skills/ios-numbers-spreadsheets`](skills/ios-numbers-spreadsheets) | Round-trip spreadsheets with Apple Numbers on iPhone/iPad: read `.numbers`/Excel/CSV returns and diff them. |
+| [`servers/bep_mcp`](servers/bep_mcp) | MCP server that gives Claude and other MCP clients tools to read, edit, check and export plans in one folder. It runs locally over stdio and uses `bep.py`'s own rules. Python 3.10+ and the `mcp` package. |
 
 The web app is published to GitHub Pages at
 <https://tannerpresscorp.github.io/bep-builder/> on every push to `master` that changes
@@ -34,6 +35,18 @@ python bep.py export plan.json -o plan.md
 
 Try the full example: `python bep.py status ../../../examples/example-plan.json`.
 
+## MCP server
+
+To give Claude Code tools for your plans, install the server from the repository root and
+point it at the folder that holds your plan files:
+
+```bash
+python -m pip install -e servers/bep_mcp
+claude mcp add bep -e BEP_PLANS_DIR="$HOME/plans" -- bep_mcp
+```
+
+The tools and their CLI equivalents are listed in [servers/bep_mcp/README.md](servers/bep_mcp/README.md).
+
 ## GitHub Copilot CLI
 
 To enable draw.io diagram generation in Copilot CLI, add the draw.io marketplace and
@@ -55,6 +68,8 @@ that replaces `ANNO` when ISO 13567 is on.
 ```bash
 pip install openpyxl defusedxml   # defusedxml: openpyxl uses it to read workbooks safely
 python tests/test_bep.py
+pip install "mcp>=2,<3"           # only for the MCP server's tests
+python tests/test_mcp.py
 ```
 
 CI runs the same tests on every push (`.github/workflows/ci.yml`). When Node.js is
