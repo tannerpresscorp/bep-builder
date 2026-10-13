@@ -1103,10 +1103,15 @@ function overlayEdits(base, local, paths) {
   paths.forEach(path => { const v = getPath(local, path); if (v !== undefined) setPathCreate(out, path, clone(v)); });
   return out;
 }
+// Browser-only saving: keep the whole plan in this browser and drop pending shared writes.
+function saveLocal() {
+  dirty.clear(); fullSave = false;
+  try { localStorage.setItem(LS_KEY, JSON.stringify(plan)); } catch (e) {}
+}
 function scheduleSave(path) {
   lastLocalEdit = Date.now();
   if (path) dirty.add(patchRoot(path)); else fullSave = true;   // no path: the whole plan changed (example, reset)
-  if (mode === "local") { dirty.clear(); fullSave = false; try { localStorage.setItem(LS_KEY, JSON.stringify(plan)); } catch (e) {} return; }
+  if (mode === "local") { saveLocal(); return; }
   if (mode !== "shared") return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(flush, 900);
@@ -1114,6 +1119,7 @@ function scheduleSave(path) {
 }
 async function flush() {
   saveTimer = null;
+  if (mode === "local") { saveLocal(); renderStatus(); return; }   // shared store dropped out; a retry lands here
   if (saving) { saveQueued = true; return; }
   if (!fullSave && !dirty.size) { renderStatus(); return; }
   saving = true; renderStatus();
@@ -1140,7 +1146,7 @@ async function flush() {
     else if (code === "invalid_argument") { canWrite = false; mode = "readonly"; renderAll(); toast("This plan is view-only for you, so changes weren't saved."); }
     else if (code === "quota_exceeded") { restore(); toast("The plan is too large to save. Remove some rows and try again."); }
     else if (code === "unavailable") { restore(); saveTimer = setTimeout(flush, 1500 + Math.random() * 1000); }
-    else { mode = "local"; try { localStorage.setItem(LS_KEY, JSON.stringify(plan)); } catch (x) {} renderAll(); }
+    else { mode = "local"; saveLocal(); renderAll(); }
   }
   saving = false; inFlight = []; inFlightFull = false;
   if (saveQueued) { saveQueued = false; await flush(); }
@@ -1269,7 +1275,7 @@ renderAll();
   if (!dbNs) { useLocal(); return; }
   db = dbNs; planRef = db.doc("bep/plan");
   mode = canWrite ? "connecting" : "readonly";
-  planRef.onSnapshot(onRemote, err => { if (err && (err.code === "revoked" || err.code === "unavailable")) { mode = "local"; renderAll(); } });
+  planRef.onSnapshot(onRemote, err => { if (err && (err.code === "revoked" || err.code === "unavailable")) { mode = "local"; saveLocal(); renderAll(); } });
   setTimeout(() => { if (mode === "connecting") { finishConnecting(); renderAll(); } }, 6000);
 })();
 

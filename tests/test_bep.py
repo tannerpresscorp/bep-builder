@@ -173,6 +173,9 @@ def _app_js():
 # Just enough DOM for the app's helpers to run under Node.
 DOM_STUB = """
 globalThis.__clicked = [];
+globalThis.__stored = {};
+Object.defineProperty(globalThis, "localStorage", { configurable: true,
+  value: { setItem: (k, v) => { __stored[k] = v; }, getItem: k => __stored[k] ?? null } });
 globalThis.document = {
   querySelector: () => ({ style: {} }),
   body: { appendChild() {} },
@@ -366,13 +369,24 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
   const connecting = { queuedWhileConnecting, scheduledOnConnect, updates: conn.updates,
     owner: conn.doc.plan.project.owner, keptGoal: conn.doc.plan.goals[0].goal };
 
+  // A retry that fires after falling back to browser-only saving saves locally, not remotely.
+  let remoteCalls = 0;
+  planRef = { get: async () => { remoteCalls++; return { exists: true }; }, set: async () => { remoteCalls++; }, update: async () => { remoteCalls++; } };
+  mode = "shared"; docExists = true; dirty.clear(); fullSave = false;
+  plan = normalize(examplePlan()); plan.project.location = "Edited during outage"; dirty.add("project.location");
+  mode = "local";                                      // the snapshot listener reported the store gone
+  await flush();
+  const localFallback = { remoteCalls, dirty: dirty.size,
+    stored: JSON.parse(__stored[LS_KEY] || "{}").project?.location || null };
+  mode = "shared";
+
   // A deleted shared plan clears a teammate version still waiting behind the banner.
   latestRemote = { plan: remote }; pendingRemote = true;
   onRemote({ exists: false });
   const staleCleared = latestRemote === null && pendingRemote === false;
   console.log(JSON.stringify({ first, second,
     roots: ["team.1.name", "standards.codes.0.code", "uses.coord.on", "project.name"].map(patchRoot),
-    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared, unknownFirst, connecting, patches }));
+    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared, unknownFirst, connecting, patches, localFallback }));
 })();
 """)
     if out is None:
@@ -389,6 +403,7 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     assert out["keptCleared"] is True and out["inFlightKept"] is True and out["staleCleared"] is True
     assert out["unknownFirst"] == {"gets": 1, "sets": 0, "updates": 1,                # merged, not overwritten
                                    "keptGoal": "Teammate goal", "phase": "Construction"}
+    assert out["localFallback"] == {"remoteCalls": 0, "dirty": 0, "stored": "Edited during outage"}
     assert out["patches"]["name"] == {"project": {"name": ""}}                # no derived status riding along
     assert out["patches"]["statusField"] == {"standards": {"statusField": "status", "status": True}}
     assert out["connecting"] == {"queuedWhileConnecting": False, "scheduledOnConnect": True, "updates": 1,
