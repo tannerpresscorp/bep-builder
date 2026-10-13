@@ -1,0 +1,311 @@
+{
+  "v": 1,
+  "project": {
+    "name": "EXAMPLE — Riverside Outpatient Clinic",
+    "owner": "Example owner (replace)",
+    "location": "Springfield, IL",
+    "delivery": "Design-bid-build",
+    "agency": "va",
+    "phase": "Design development",
+    "start": "2026-09-01",
+    "cui": "no",
+    "iso": true
+  },
+  "team": [
+    {
+      "role": "BIM manager",
+      "org": "Example Architects",
+      "name": "Example name",
+      "email": ""
+    },
+    {
+      "role": "Architectural lead",
+      "org": "Example Architects",
+      "name": "Example architect",
+      "email": ""
+    },
+    {
+      "role": "MEP lead",
+      "org": "Example Engineers",
+      "name": "Example engineer",
+      "email": ""
+    },
+    {
+      "role": "Owner representative",
+      "org": "Example owner",
+      "name": "Example owner rep",
+      "email": ""
+    }
+  ],
+  "goals": [
+    {
+      "goal": "Catch MEP conflicts before construction documents are issued",
+      "uses": "3D coordination"
+    },
+    {
+      "goal": "Hand over equipment data the facilities team can load directly",
+      "uses": "COBie"
+    }
+  ],
+  "uses": {
+    "existing": {
+      "on": false,
+      "party": "",
+      "value": "",
+      "flow": ""
+    },
+    "authoring": {
+      "on": true,
+      "party": "Architectural lead (Example architect)",
+      "value": "One coordinated model drives drawings, schedules and quantities",
+      "flow": "Discipline leads model in Revit from the firm template → work-share to ACC daily → BIM manager publishes the composite model each Friday."
+    },
+    "review": {
+      "on": false,
+      "party": "",
+      "value": "",
+      "flow": ""
+    },
+    "coord": {
+      "on": true,
+      "party": "BIM manager (Example name)",
+      "value": "Reduces field rework on a ceiling-congested clinic",
+      "flow": "MEP lead uploads NWC exports each Friday → BIM manager runs clash tests → issues assigned in Tuesday coordination meeting → fixes in next upload."
+    },
+    "drawings": {
+      "on": true,
+      "party": "Architectural lead (Example architect)",
+      "value": "Sheets stay consistent with the model as the design changes",
+      "flow": "Views and schedules are placed from the model → sheets checked against the NCS sheet list → PDF and DWG sets issued at each milestone."
+    },
+    "code": {
+      "on": false,
+      "party": "",
+      "value": "",
+      "flow": ""
+    },
+    "energy": {
+      "on": false,
+      "party": "",
+      "value": "",
+      "flow": ""
+    },
+    "cost": {
+      "on": false,
+      "party": "",
+      "value": "",
+      "flow": ""
+    },
+    "4d": {
+      "on": false,
+      "party": "",
+      "value": "",
+      "flow": ""
+    },
+    "ifc": {
+      "on": false,
+      "party": "",
+      "value": "",
+      "flow": ""
+    },
+    "record": {
+      "on": false,
+      "party": "",
+      "value": "",
+      "flow": ""
+    },
+    "cobie": {
+      "on": true,
+      "party": "Owner representative (Example owner rep)",
+      "value": "Facilities team loads equipment data into their CMMS without re-keying",
+      "flow": "Design team adds COBie parameters to equipment families → contractor fills serial and warranty data during construction → owner rep checks the COBie workbook before closeout."
+    }
+  },
+  "exchanges": [
+    {
+      "what": "Coordination model",
+      "from": "MEP lead",
+      "to": "BIM manager",
+      "content": "Ducts, pipes, cable tray over 2 in.",
+      "lod": "LOD 300",
+      "due": "Weekly"
+    },
+    {
+      "what": "COBie handover",
+      "from": "Contractor",
+      "to": "Owner",
+      "content": "Equipment, spaces, zones",
+      "lod": "LOD 500 data",
+      "due": "Closeout"
+    }
+  ],
+  "cobie": true,
+  "collab": {
+    "cde": "Autodesk Construction Cloud",
+    "sharing": "Weekly, Friday",
+    "meetings": "Coordination meeting every Tuesday",
+    "coords": "Shared coordinates from the site model (survey point at grid A/1)",
+    "naming": "[Project]-[Originator]-[Discipline]-[Building].rvt, e.g. ROC-EXA-A-B01.rvt",
+    "changes": "Changes are requested by design change request or owner directive, reviewed in the Tuesday meeting, approved by the owner rep, and logged in the ACC issue log before models are updated."
+  },
+  "tech": [
+    {
+      "discipline": "Architectural",
+      "software": "Revit",
+      "version": "2026",
+      "formats": "RVT, IFC, DWG"
+    },
+    {
+      "discipline": "MEP",
+      "software": "Revit",
+      "version": "2026",
+      "formats": "RVT, NWC"
+    },
+    {
+      "discipline": "Coordination",
+      "software": "Navisworks Manage",
+      "version": "2026",
+      "formats": "NWD, NWF"
+    }
+  ],
+  "standards": {
+    "ncs": "V7 (2024)",
+    "level2": false,
+    "minor": true,
+    "status": true,
+    "sheet": "level1",
+    "codes": [],
+    "plotting": "Firm NCS pen table (example-ncs.ctb)",
+    "notes": "",
+    "statusField": "status",
+    "iso13567": false,
+    "layerFormat": "element",
+    "sheetCode": "SHET"
+  },
+  "qc": {
+    "a0": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "a1": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "a2": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "a3": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "a4": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "a5": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "a6": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "a7": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "a8": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "d0": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "d1": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "d2": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "d3": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "d4": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "d5": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "d6": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "d7": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    },
+    "d8": {
+      "on": true,
+      "who": "",
+      "freq": ""
+    }
+  },
+  "checks": {
+    "visual": {
+      "tool": "Revit and Navisworks walkthrough",
+      "who": "Architectural lead (Example architect)",
+      "freq": "Before each model share"
+    },
+    "clash": {
+      "tool": "Navisworks Manage Clash Detective",
+      "who": "BIM manager (Example name)",
+      "freq": "Weekly"
+    },
+    "standards": {
+      "tool": "bep.py check-names on exported layer and sheet lists",
+      "who": "BIM manager (Example name)",
+      "freq": "Before each submission"
+    },
+    "integrity": {
+      "tool": "Revit Warnings review and Purge Unused",
+      "who": "MEP lead (Example engineer)",
+      "freq": "At each design milestone"
+    }
+  },
+  "deliver": [
+    {
+      "item": "Composite model",
+      "format": "RVT + IFC",
+      "due": "Construction documents"
+    },
+    {
+      "item": "COBie workbook",
+      "format": "XLSX",
+      "due": "Closeout"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # Design: `bep_mcp`, an MCP server for bep-builder
 
-Status: **being built.** Steps 1–4 of the [delivery plan](#6-delivery-plan) are done: `bep.py`'s plain functions, the server in `servers/bep_mcp/` with its read-only and write tools, and its packaging and documentation.
+Status: **being built.** Steps 1–5 of the [delivery plan](#6-delivery-plan) are done: `bep.py`'s plain functions, the server in `servers/bep_mcp/` with its read-only and write tools, its packaging and documentation, and its evaluation questions. Phase 2 (step 6) remains.
 
 **Changes from the original proposal, found while building:**
 - **Location:** the server lives in `servers/bep_mcp/`, not `mcp/bep_mcp/`. A top-level `mcp/` folder would shadow the `mcp` SDK package whenever Python runs from the repository root.
@@ -192,7 +192,7 @@ claude mcp add bep -e BEP_PLANS_DIR="$HOME/plans" -- bep_mcp
 2. **Server skeleton:** `servers/bep_mcp/` with the sandbox, error mapping and the 10 read-only tools, plus `test_mcp.py` (run in CI). Size: M. *(Done.)*
 3. **Write tools** (`create`, `set`, `add`, `remove`, `use`, `qc`, `save_document`), plus the parity tests and a concurrency test for the write lock. Size: M. *(Done.)*
 4. **Packaging and CI:** add `pyproject.toml`, put `pip install mcp` in CI, and document it in `README.md` and `docs/onboarding/`. Size: S. *(Done.)*
-5. **Evaluations:** `evals.xml` with 10 questions, then fix any tool descriptions they show to be unclear. Size: M.
+5. **Evaluations:** `evals.xml` with 10 questions, then fix any tool descriptions they show to be unclear. Size: M. *(Done. A first run answered all 10; it led to clearer descriptions for `bep_get_plan`, `bep_get_process_map`, `bep_convert_layers` and `bep_set_qc`.)*
 6. *(Phase 2)* Resources and the `start_bep` prompt. Size: S.
 
 Each step is its own PR, and none changes the plan format, the web app or the skills' instructions.
@@ -201,5 +201,6 @@ Each step is its own PR, and none changes the plan format, the web app or the sk
 
 - **A team server.** If several people should share plans through Claude, move to streamable HTTP. That needs OAuth, per-user authorization on plan files, binding to `127.0.0.1` or putting it behind a proxy, `Origin` checks, and a version check on writes.
 - **The web app's shared store.** Plans saved in the Claude artifact (`bep/plan`) are invisible to this server. Exposing them would mean reading and writing that store through the artifact data API rather than files. That decision depends on where the team keeps its plans of record.
+- **Richer tool results** suggested by the first evaluation run: give each `bep_list_todos` item the dotted path it refers to (e.g. `uses.4d.party`), and offer the process map as JSON (phases, use ids, exchange targets) as well as Mermaid.
 - **The maps workbook round trip,** once clients handle binary resources and file uploads reliably.
 - **Hosting skills next to MCP.** If the skills' scripts gain more shared code, consider one installable package (`bep_builder`) that the CLI, the skills and the MCP server all import. That would also remove the copied modules (`iso13567.py`, `read_tables.py`).

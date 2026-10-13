@@ -50,6 +50,10 @@ Writes run one at a time under a lock, so overlapping requests can't overwrite e
 
 Data tools return JSON, both as text and as `structuredContent`. Document tools (map, export, definition) return plain text. A failure returns an error result carrying the CLI's own message, so the model can correct its input.
 
+## Evaluations
+
+`evals/evals.xml` holds 10 questions a model should be able to answer using only this server's read-only tools, with `BEP_PLANS_DIR` set to `evals/plans`. That folder has two example plans: `clinic.json`, which is complete, and `barracks.json`, a USACE plan that has just been started. The questions test whether the tool descriptions are clear enough for a model to find the right tool and arguments, for example which dotted path to read or how to read the process map. To run them, connect any MCP client to the server with that folder, ask each question, and compare the final answer with `<answer>`. `test_eval_answers_match_the_fixtures` keeps the answers true as the code changes.
+
 ## Tests
 
 ```bash

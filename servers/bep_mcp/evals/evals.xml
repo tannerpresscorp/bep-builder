@@ -1,0 +1,49 @@
+<!--
+  Evaluation questions for bep_mcp. Run the server with BEP_PLANS_DIR set to
+  servers/bep_mcp/evals/plans, give a model only the server's tools, ask each
+  question, and compare its final answer with <answer>. Every question can be
+  answered with read-only tools. tests/test_mcp.py checks that each answer
+  still matches the fixture plans.
+-->
+<evaluation>
+  <qa_pair>
+    <question>Which plan in the plans folder still has TODO items, and how many does it have? Answer as "file name, count".</question>
+    <answer>barracks.json, 36</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In barracks.json, how many of the 11 BEP sections have the status "empty"? Answer with a number.</question>
+    <answer>8</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In barracks.json, one BIM use is turned on but has no responsible party yet. What is its catalog id?</question>
+    <answer>4d</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the process map for clinic.json, the "COBie handover" exchange is drawn on the arrow into a BIM use. What is that use's catalog id?</question>
+    <answer>cobie</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the process map for clinic.json, how many BIM uses are placed in the Design phase? Answer with a number.</question>
+    <answer>3</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Of the sheet numbers A-101, AD-101, M-201, E601, FP-101 and A101, how many follow NCS sheet naming exactly as written? Answer with a number.</question>
+    <answer>2</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Using clinic.json's ISO 13567 settings, what layer name is suggested for the NCS layer A-ANNO-NOTE?</question>
+    <answer>A-SHET-____-NOTE-_</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In clinic.json, who is responsible for the interference (clash) check? Give the text exactly as it is stored in the plan.</question>
+    <answer>BIM manager (Example name)</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>barracks.json follows one agency's criteria. What is that agency's catalog id, and how many TODO items does the plan have in section 10 (Quality control)? Answer as "id, count".</question>
+    <answer>usace, 12</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Which BIM use in the catalog belongs to the Operations phase but is not turned on in clinic.json? Answer with its catalog id.</question>
+    <answer>record</answer>
+  </qa_pair>
+</evaluation>

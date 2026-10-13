@@ -248,6 +248,42 @@ def test_concurrent_writes_are_not_lost():
     assert sorted(g["goal"] for g in goals) == sorted(f"Goal {i}" for i in range(20))
 
 
+def test_eval_answers_match_the_fixtures():
+    """servers/bep_mcp/evals/evals.xml: each answer is still what the tools say for its fixture plans."""
+    import re
+    import xml.etree.ElementTree as ET
+    evals = ROOT / "servers/bep_mcp/evals"
+    pairs = [(q.findtext("question"), q.findtext("answer"))
+             for q in ET.parse(evals / "evals.xml").getroot().iter("qa_pair")]
+    assert len(pairs) == 10
+    d = str(evals / "plans")
+    get = lambda tool, **a: call(d, tool, **a)[1]
+    todos = lambda name: get("bep_list_todos", plan=name)
+    plans = get("bep_list_plans")["plans"]
+    barracks = get("bep_get_plan", plan="barracks.json")["value"]
+    clinic = get("bep_get_plan", plan="clinic.json")["value"]
+    catalog = get("bep_get_catalog")["bim_uses"]
+    pmap = get("bep_get_process_map", plan="clinic.json")
+    design = pmap.split('subgraph P1["Design"]')[1].split("end")[0]
+    sheets = get("bep_check_names", names=["A-101", "AD-101", "M-201", "E601", "FP-101", "A101"])
+    layer = get("bep_convert_layers", plan="clinic.json", names=["A-ANNO-NOTE"])["results"][0]
+    qc = next(s for s in todos("barracks.json")["sections"] if s["code"] == "10")
+    computed = [
+        ", ".join(f"{p['plan']}, {p['todo_count']}" for p in plans if p["todo_count"]),
+        str(sum(s["status"] == "empty" for s in get("bep_get_status", plan="barracks.json")["sections"])),
+        " ".join(k for k, u in barracks["uses"].items() if u["on"] and not u["party"]),
+        re.search(r'-->\|"COBie handover[^"]*"\| u_(\w+)', pmap).group(1),
+        str(design.count("u_")),
+        str(sheets["valid"]),
+        layer["suggested"],
+        clinic["checks"]["clash"]["who"],
+        f"{barracks['project']['agency']}, {len(qc['todos'])}",
+        " ".join(u["id"] for u in catalog if u["phase"] == "Operations" and not clinic["uses"][u["id"]]["on"]),
+    ]
+    for (question, answer), got in zip(pairs, computed):
+        assert answer == got, (question, answer, got)
+
+
 def test_server_needs_a_plans_folder():
     try:
         create_server(str(ROOT / "no-such-folder"))

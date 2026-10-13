@@ -173,7 +173,9 @@ def create_server(plans_dir):
     @_logged
     def bep_get_plan(plan: str, path: str | None = None) -> dict[str, Any]:
         """Read a whole plan, or one value by dotted path (e.g. 'project.name', 'team.0',
-        'uses.coord')."""
+        'uses.coord'). Top-level keys: project (name, agency, phase...), team, goals, uses
+        (by BIM use id), exchanges, cobie, collab, tech, standards (NCS and ISO 13567 settings),
+        qc (model rules a0-d8), checks (visual, clash, standards, integrity), deliver."""
         p = _load(plans_dir, plan)
         if not path:
             return {"plan": plan, "value": p}
@@ -217,8 +219,9 @@ def create_server(plans_dir):
     @server.tool(annotations=READ, structured_output=True)
     @_logged
     def bep_convert_layers(plan: str, names: list[str], anno_element: str | None = None) -> dict[str, Any]:
-        """Suggest ISO 13567 layer names for existing layers under the plan's layer profile.
-        A null suggestion means a person must decide, e.g. which element an ANNO layer belongs to;
+        """Suggest ISO 13567 layer names for existing layers under the plan's layer profile
+        (standards.layerFormat, statusField, sheetCode). This works even while the plan has ISO
+        13567 naming off; iso13567_on in the result says whether it is on. A null suggestion means a person must decide, e.g. which element an ANNO layer belongs to;
         pass anno_element (a 4-character element code) to place them."""
         if not names:
             raise ToolError("Give at least one layer name.")
@@ -233,7 +236,9 @@ def create_server(plans_dir):
     @_logged
     def bep_get_process_map(plan: str, format: Literal["mermaid", "tldraw"] = "mermaid") -> str:
         """The plan's Level 1 process map (section 05): a Mermaid flowchart, or a script for the
-        tldraw MCP server's exec tool. Exchanges that match no BIM use are listed at the end."""
+        tldraw MCP server's exec tool. In Mermaid, phases are subgraphs, each BIM use is a node
+        named u_<use id>, a phase with no uses shows a stub node, and each exchange labels the
+        arrow into the use it feeds. Exchanges that match no BIM use are listed at the end."""
         model = processmap.build(_load(plans_dir, plan), bep.USES)
         text = processmap.to_tldraw(model) if format == "tldraw" else processmap.to_mermaid(model)
         if model["notes"] and format == "mermaid":
@@ -336,7 +341,8 @@ def create_server(plans_dir):
                    freq: str | None = None, tool: str | None = None) -> dict[str, Any]:
         """Configure a QC check (visual, clash, standards, integrity: tool, who, freq) or a model
         rule (a0-a8, d0-d8: on, who, freq). Checks can't be turned off; rules have no tool.
-        Omitted details are left as they are."""
+        Omitted details are left as they are. In the plan, checks are stored at checks.<id> and
+        rules at qc.<id>."""
         result, status = _edit(plans_dir, plan, lambda p: {
             "id": id, "qc": bep.set_qc(p, id, on=on, who=who, freq=freq, tool=tool)})
         return {"plan": plan, **result, "status": status}
