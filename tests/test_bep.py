@@ -235,8 +235,9 @@ def test_partial_rows_are_filled_from_templates():
         assert n["standards"]["codes"] == [{"code": "ACOU", "meaning": ""}]
         assert n["collab"] == cli.blank_plan()["collab"]
         assert n["goals"][-1] == {"goal": "", "uses": ""}
-        (d / "s.json").write_text(json.dumps({"standards": "damaged", "team": ["foo"]}))
-        for cmd in ("status", "export", "validate"):
+        (d / "s.json").write_text(json.dumps({"standards": "damaged", "team": ["foo"],
+                                              "exchanges": [{"what": None, "lod": None}]}))
+        for cmd in ("status", "export", "validate", "process-map"):
             code, out = bep(cmd, d / "s.json")
             assert "Traceback" not in out, out
         assert "TODO: Coordination model: LOD" in (d / "p.md").read_text()
@@ -323,9 +324,14 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
   plan = blankPlan(); fullSave = true; dirty.clear();
   applyRemote({ plan: remote, updatedBy: "teammate", updatedAt: new Date().toISOString() });
   const keptCleared = plan.project.name === "" && plan.goals[0].goal === "";
+
+  // A deleted shared plan clears a teammate version still waiting behind the banner.
+  latestRemote = { plan: remote }; pendingRemote = true;
+  onRemote({ exists: false });
+  const staleCleared = latestRemote === null && pendingRemote === false;
   console.log(JSON.stringify({ first, second,
     roots: ["team.1.name", "standards.codes.0.code", "uses.coord.on", "project.name"].map(patchRoot),
-    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept }));
+    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared }));
 })();
 """)
     if out is None:
@@ -339,7 +345,7 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     assert s["sets"] == 1 and s["owner"] == "Owner X" and s["name"] == "Mine"   # recreated whole
     assert out["roots"] == ["team", "standards.codes", "uses.coord.on", "project.name"]
     assert out["merged"] == {"goal": "Teammate goal", "location": "My unsaved edit"}
-    assert out["keptCleared"] is True and out["inFlightKept"] is True
+    assert out["keptCleared"] is True and out["inFlightKept"] is True and out["staleCleared"] is True
 
 
 def test_pages_build_is_a_full_document():

@@ -254,8 +254,10 @@ def normalize(p):
         if not isinstance(rows, list):
             parent[key] = copy.deepcopy(get_path(blank_plan(), list_path))
             continue
-        # a row damaged into a scalar (e.g. by an old `set team.0 foo`) becomes a blank row
-        parent[key] = [{**template, **row} if isinstance(row, dict) else dict(template) for row in rows]
+        # a row damaged into a scalar (e.g. by an old `set team.0 foo`) becomes a blank row;
+        # null fields count as missing, as they do for sections
+        parent[key] = [{**template, **{k: v for k, v in row.items() if v is not None}}
+                       if isinstance(row, dict) else dict(template) for row in rows]
     return plan
 
 

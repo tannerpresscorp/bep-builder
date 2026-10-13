@@ -1152,7 +1152,13 @@ function applyRemote(d) {
   renderAll();
 }
 function onRemote(snap) {
-  if (!snap.exists) { docExists = false; if (mode === "connecting") { mode = canWrite ? "shared" : "readonly"; renderAll(); } return; }
+  if (!snap.exists) {
+    // The shared plan was deleted: drop any teammate version waiting behind the banner.
+    docExists = false; latestRemote = null;
+    if (pendingRemote) { pendingRemote = false; renderBanner(); }
+    if (mode === "connecting") { mode = canWrite ? "shared" : "readonly"; renderAll(); }
+    return;
+  }
   docExists = true;
   const d = snap.data();
   latestRemote = d;
