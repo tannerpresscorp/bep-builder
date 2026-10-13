@@ -32,6 +32,16 @@ python bep.py export plan.json -o plan.md
 
 Try the full example: `python bep.py status ../../../examples/example-plan.json`.
 
+## GitHub Copilot CLI
+
+To enable draw.io diagram generation in Copilot CLI, add the draw.io marketplace and
+install its plugin:
+
+```bash
+copilot plugin marketplace add jgraph/drawio-mcp
+copilot plugin install drawio@drawio
+```
+
 ## Firm defaults
 
 New plans start with: ISO 13567 layer naming off (turn on per project), element layer
