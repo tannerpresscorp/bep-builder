@@ -335,13 +335,26 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
   applyRemote({ plan: remote, updatedBy: "teammate", updatedAt: new Date().toISOString() });
   const keptCleared = plan.project.name === "" && plan.goals[0].goal === "";
 
+  // Saving before the first snapshot: check whether the shared plan exists, then merge.
+  const slow = { doc: { plan: clone(remote) }, sets: 0, updates: 0, gets: 0 };
+  planRef = {
+    get: async () => { slow.gets++; return { exists: !!slow.doc }; },
+    set: async d => { slow.sets++; slow.doc = clone(d); },
+    update: async d => { slow.updates++; merge(slow.doc, clone(d)); }
+  };
+  plan = normalize(examplePlan()); fullSave = false; dirty.clear(); docExists = null;
+  plan.project.phase = "Construction"; scheduleSave("project.phase");
+  clearTimeout(saveTimer); await flush();
+  const unknownFirst = { gets: slow.gets, sets: slow.sets, updates: slow.updates,
+    keptGoal: slow.doc.plan.goals[0].goal, phase: slow.doc.plan.project.phase };
+
   // A deleted shared plan clears a teammate version still waiting behind the banner.
   latestRemote = { plan: remote }; pendingRemote = true;
   onRemote({ exists: false });
   const staleCleared = latestRemote === null && pendingRemote === false;
   console.log(JSON.stringify({ first, second,
     roots: ["team.1.name", "standards.codes.0.code", "uses.coord.on", "project.name"].map(patchRoot),
-    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared }));
+    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared, unknownFirst }));
 })();
 """)
     if out is None:
@@ -356,6 +369,8 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     assert out["roots"] == ["team", "standards.codes", "uses.coord.on", "project.name"]
     assert out["merged"] == {"goal": "Teammate goal", "location": "My unsaved edit"}
     assert out["keptCleared"] is True and out["inFlightKept"] is True and out["staleCleared"] is True
+    assert out["unknownFirst"] == {"gets": 1, "sets": 0, "updates": 1,                # merged, not overwritten
+                                   "keptGoal": "Teammate goal", "phase": "Construction"}
 
 
 def test_pages_build_is_a_full_document():

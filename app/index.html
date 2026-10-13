@@ -362,7 +362,8 @@ let canWrite = true;
 let mode = "connecting"; // connecting | shared | local | readonly
 let db = null, planRef = null, userCap = null, downloads = null, myId = null;
 let lastLocalEdit = 0, saveTimer = null, saving = false, saveQueued = false, pendingRemote = false;
-let dirty = new Set(), fullSave = false, docExists = false, latestRemote = null;
+// docExists: null until the first snapshot (or a read) says whether the shared plan exists.
+let dirty = new Set(), fullSave = false, docExists = null, latestRemote = null;
 let inFlight = [], inFlightFull = false;   // what the save now in progress is writing
 let confirmReset = false, confirmExample = false;
 
@@ -1113,6 +1114,12 @@ async function flush() {
   if (saving) { saveQueued = true; return; }
   if (!fullSave && !dirty.size) { renderStatus(); return; }
   saving = true; renderStatus();
+  if (docExists === null) {
+    // Saving before the first snapshot arrived (slow connection): check once, so an
+    // existing shared plan gets a merge, not a whole-plan overwrite from this browser.
+    try { docExists = (await planRef.get()).exists; }
+    catch (e) { saving = false; saveTimer = setTimeout(flush, 1500 + Math.random() * 1000); renderStatus(); return; }
+  }
   plan.standards.status = plan.standards.statusField !== "none";
   const paths = [...dirty], full = fullSave || !docExists;
   dirty.clear(); fullSave = false;
