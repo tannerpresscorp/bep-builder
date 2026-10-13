@@ -13,7 +13,7 @@ Whole Building Design Guide (WBDG) criteria, and agency overrides.
 | [`skills/ios-numbers-spreadsheets`](skills/ios-numbers-spreadsheets) | Round-trip spreadsheets with Apple Numbers on iPhone/iPad: read `.numbers`/Excel/CSV returns and diff them. |
 
 The web app is published to GitHub Pages at
-<https://imatthewtanner.github.io/bep-builder/> on every push to `master` that changes
+<https://tannerpresscorp.github.io/bep-builder/> on every push to `master` that changes
 `app/` or `tools/build_pages.py` (`.github/workflows/pages.yml`). The workflow runs `tools/build_pages.py` to wrap the
 artifact page in a full HTML document (doctype, charset, language, viewport) for Pages.
 
