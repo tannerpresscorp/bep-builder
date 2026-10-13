@@ -7,7 +7,7 @@
     "delivery": "Design-bid-build",
     "agency": "va",
     "phase": "Design development",
-    "start": "",
+    "start": "2026-09-01",
     "cui": "no",
     "iso": true
   },
@@ -21,19 +21,19 @@
     {
       "role": "Architectural lead",
       "org": "Example Architects",
-      "name": "",
+      "name": "Example architect",
       "email": ""
     },
     {
       "role": "MEP lead",
       "org": "Example Engineers",
-      "name": "",
+      "name": "Example engineer",
       "email": ""
     },
     {
       "role": "Owner representative",
       "org": "Example owner",
-      "name": "",
+      "name": "Example owner rep",
       "email": ""
     }
   ],
@@ -56,9 +56,9 @@
     },
     "authoring": {
       "on": true,
-      "party": "",
-      "value": "",
-      "flow": ""
+      "party": "Architectural lead (Example architect)",
+      "value": "One coordinated model drives drawings, schedules and quantities",
+      "flow": "Discipline leads model in Revit from the firm template → work-share to ACC daily → BIM manager publishes the composite model each Friday."
     },
     "review": {
       "on": false,
@@ -74,9 +74,9 @@
     },
     "drawings": {
       "on": true,
-      "party": "",
-      "value": "",
-      "flow": ""
+      "party": "Architectural lead (Example architect)",
+      "value": "Sheets stay consistent with the model as the design changes",
+      "flow": "Views and schedules are placed from the model → sheets checked against the NCS sheet list → PDF and DWG sets issued at each milestone."
     },
     "code": {
       "on": false,
@@ -116,9 +116,9 @@
     },
     "cobie": {
       "on": true,
-      "party": "",
-      "value": "",
-      "flow": ""
+      "party": "Owner representative (Example owner rep)",
+      "value": "Facilities team loads equipment data into their CMMS without re-keying",
+      "flow": "Design team adds COBie parameters to equipment families → contractor fills serial and warranty data during construction → owner rep checks the COBie workbook before closeout."
     }
   },
   "exchanges": [
@@ -145,8 +145,8 @@
     "sharing": "Weekly, Friday",
     "meetings": "Coordination meeting every Tuesday",
     "coords": "Shared coordinates from the site model (survey point at grid A/1)",
-    "naming": "",
-    "changes": ""
+    "naming": "[Project]-[Originator]-[Discipline]-[Building].rvt, e.g. ROC-EXA-A-B01.rvt",
+    "changes": "Changes are requested by design change request or owner directive, reviewed in the Tuesday meeting, approved by the owner rep, and logged in the ACC issue log before models are updated."
   },
   "tech": [
     {
@@ -175,7 +175,7 @@
     "status": true,
     "sheet": "level1",
     "codes": [],
-    "plotting": "",
+    "plotting": "Firm NCS pen table (example-ncs.ctb)",
     "notes": "",
     "statusField": "status",
     "iso13567": false,
@@ -276,24 +276,24 @@
   },
   "checks": {
     "visual": {
-      "tool": "",
-      "who": "",
-      "freq": ""
+      "tool": "Revit and Navisworks walkthrough",
+      "who": "Architectural lead (Example architect)",
+      "freq": "Before each model share"
     },
     "clash": {
-      "tool": "",
-      "who": "",
-      "freq": ""
+      "tool": "Navisworks Manage Clash Detective",
+      "who": "BIM manager (Example name)",
+      "freq": "Weekly"
     },
     "standards": {
-      "tool": "",
-      "who": "",
-      "freq": ""
+      "tool": "bep.py check-names on exported layer and sheet lists",
+      "who": "BIM manager (Example name)",
+      "freq": "Before each submission"
     },
     "integrity": {
-      "tool": "",
-      "who": "",
-      "freq": ""
+      "tool": "Revit Warnings review and Purge Unused",
+      "who": "MEP lead (Example engineer)",
+      "freq": "At each design milestone"
     }
   },
   "deliver": [
