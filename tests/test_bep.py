@@ -22,7 +22,10 @@ import check_names  # noqa: E402
 
 
 def bep(*args, cwd=None):
-    r = subprocess.run([sys.executable, str(CLI / "bep.py"), *map(str, args)], capture_output=True, text=True, cwd=cwd)
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    r = subprocess.run([sys.executable, str(CLI / "bep.py"), *map(str, args)], capture_output=True,
+                       text=True, encoding="utf-8", env=env, cwd=cwd)
     return r.returncode, r.stdout + r.stderr
 
 
@@ -68,7 +71,7 @@ def test_cli_plan_lifecycle():
         assert code == 1 and "TODO items" in out
         code, out = bep("export", d / "p.json")
         assert code == 0 and "USACE / DoD overrides" in out and "```mermaid" in out
-        plan = json.loads((d / "p.json").read_text())
+        plan = json.loads((d / "p.json").read_text(encoding="utf-8"))
         assert plan["standards"]["sheetCode"] == "SHET" and plan["standards"]["iso13567"] is False
     finally:
         shutil.rmtree(d)
@@ -86,19 +89,19 @@ def test_examples_in_sync():
     """examples/example-plan.json, 'bep init --example' and the app's example are the same plan."""
     sys.path.insert(0, str(CLI))
     import bep as cli
-    ref = cli.normalize(json.loads((ROOT / "examples/example-plan.json").read_text()))
+    ref = cli.normalize(json.loads((ROOT / "examples/example-plan.json").read_text(encoding="utf-8")))
     assert cli.normalize(cli.example_plan()) == ref
     assert not cli.collect_todos(cli.build_doc(ref))
     node = shutil.which("node")
     if not node:
         print("  (skipped app check: Node.js not installed)")
         return
-    html = (ROOT / "app/index.html").read_text()
+    html = (ROOT / "app/index.html").read_text(encoding="utf-8")
     js = html.split("<script>")[1].split("</script>")[0].split("/* ---------- Events ---------- */")[0]
-    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as fh:
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as fh:
         fh.write(js + "\nconsole.log(JSON.stringify(normalize(examplePlan())));\n")
     try:
-        r = subprocess.run([node, fh.name], capture_output=True, text=True)
+        r = subprocess.run([node, fh.name], capture_output=True, text=True, encoding="utf-8")
         assert r.returncode == 0, r.stderr
     finally:
         os.unlink(fh.name)
@@ -125,11 +128,12 @@ def test_maps_workbook_round_trip():
         wb.save(d / "edited.xlsx")
         code, out = bep("apply-maps", d / "p.json", d / "edited.xlsx")
         assert code == 0 and "Selected Phase planning (4D)" in out
-        plan = json.loads((d / "p.json").read_text())
+        plan = json.loads((d / "p.json").read_text(encoding="utf-8"))
         assert plan["uses"]["4d"]["on"] and plan["uses"]["4d"]["party"] == "Contractor VDC lead"
         assert "No changes" in bep("apply-maps", d / "p.json", d / "edited.xlsx")[1]   # idempotent
         diff = subprocess.run([sys.executable, str(NUM / "diff_tables.py"), d / "maps.xlsx", d / "edited.xlsx",
-                               "--key", "Uses=Project,BIM use"], capture_output=True, text=True).stdout
+                               "--key", "Uses=Project,BIM use"], capture_output=True, text=True,
+                              encoding="utf-8", env={**os.environ, "PYTHONIOENCODING": "utf-8"}).stdout
         assert "Phase planning (4D) | Selected (Y/N) | N | Y" in diff
     finally:
         shutil.rmtree(d)
@@ -140,9 +144,9 @@ def test_app_matches_cli():
     if not node:
         print("  (skipped: Node.js not installed)")
         return
-    html = (ROOT / "app/index.html").read_text()
+    html = (ROOT / "app/index.html").read_text(encoding="utf-8")
     js = html.split("<script>")[1].split("</script>")[0].split("/* ---------- Events ---------- */")[0]
-    plan = json.loads((ROOT / "examples/example-plan.json").read_text())
+    plan = json.loads((ROOT / "examples/example-plan.json").read_text(encoding="utf-8"))
     names = ["A-WALL-FULL-TEXT-N", "G-ANNO-TEXT-N", "A-TEXT-____-____-N", "G-ANNO-TTLB-N", "A-ANNO-DIMS", "A-WALL-FULL-D"]
     harness = js + f"""
 plan = normalize({json.dumps(plan)});
@@ -150,10 +154,10 @@ const p = profileFor();
 const out = {{ map: mapToMermaid(buildMap()), iso: {json.dumps(names)}.map(n => [isoCheck(n, p).length === 0, isoConvert(n, p, null, "SHET")[0]]) }};
 console.log(JSON.stringify(out));
 """
-    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as fh:
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as fh:
         fh.write(harness)
     try:
-        r = subprocess.run([node, fh.name], capture_output=True, text=True)
+        r = subprocess.run([node, fh.name], capture_output=True, text=True, encoding="utf-8")
         assert r.returncode == 0, r.stderr
         app = json.loads(r.stdout)
     finally:
@@ -166,7 +170,7 @@ console.log(JSON.stringify(out));
 # ---------------------------------------------------------------- regression tests for the
 # high-priority review items (CLI data safety, workbook injection, app saving and downloads)
 def _app_js():
-    html = (ROOT / "app/index.html").read_text()
+    html = (ROOT / "app/index.html").read_text(encoding="utf-8")
     return html.split("<script>")[1].split("</script>")[0].split("/* ---------- Events ---------- */")[0]
 
 
@@ -188,10 +192,10 @@ def _node(code):
     node = shutil.which("node")
     if not node:
         return None
-    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as fh:
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as fh:
         fh.write(DOM_STUB + _app_js() + "\n" + code)
     try:
-        r = subprocess.run([node, fh.name], capture_output=True, text=True)
+        r = subprocess.run([node, fh.name], capture_output=True, text=True, encoding="utf-8")
         assert r.returncode == 0, r.stderr
         return json.loads(r.stdout)
     finally:
@@ -202,14 +206,14 @@ def test_set_refuses_sections_and_keeps_file_valid():
     d = Path(tempfile.mkdtemp())
     try:
         assert bep("init", d / "p.json")[0] == 0
-        before = (d / "p.json").read_text()
+        before = (d / "p.json").read_text(encoding="utf-8")
         for path, value in (("project", "foo"), ("team", "foo"), ("uses.coord", "x"), ("team.-1.name", "Bob")):
             code, out = bep("set", d / "p.json", path, value)
             assert code != 0 and "Couldn't set" in out, out
-        assert (d / "p.json").read_text() == before                    # nothing was written
+        assert (d / "p.json").read_text(encoding="utf-8") == before    # nothing was written
         assert bep("status", d / "p.json")[0] == 0                      # file still loads
         assert bep("set", d / "p.json", "team.0.name", "Ana")[0] == 0
-        assert json.loads((d / "p.json").read_text())["team"][0]["name"] == "Ana"
+        assert json.loads((d / "p.json").read_text(encoding="utf-8"))["team"][0]["name"] == "Ana"
         assert [f.name for f in d.iterdir()] == ["p.json"]              # atomic save leaves no temp file
         if os.name == "posix":
             os.chmod(d / "p.json", 0o700)   # owner-only, but not mkstemp's 0o600
@@ -218,12 +222,12 @@ def test_set_refuses_sections_and_keeps_file_valid():
             (d / "link.json").symlink_to("p.json")
             assert bep("set", d / "link.json", "project.name", "Via link")[0] == 0
             assert (d / "link.json").is_symlink()                       # link kept
-            assert json.loads((d / "p.json").read_text())["project"]["name"] == "Via link"
+            assert json.loads((d / "p.json").read_text(encoding="utf-8"))["project"]["name"] == "Via link"
             if os.geteuid() != 0:                                       # root ignores file modes
                 os.chmod(d / "p.json", 0o400)
                 code, out = bep("set", d / "p.json", "project.name", "Y")
                 assert code != 0 and "read-only" in out, out
-                assert json.loads((d / "p.json").read_text())["project"]["name"] == "Via link"
+                assert json.loads((d / "p.json").read_text(encoding="utf-8"))["project"]["name"] == "Via link"
                 os.chmod(d / "p.json", 0o600)
     finally:
         shutil.rmtree(d)
@@ -232,7 +236,7 @@ def test_set_refuses_sections_and_keeps_file_valid():
 def test_partial_rows_are_filled_from_templates():
     sys.path.insert(0, str(CLI))
     import bep as cli
-    plan = json.loads((ROOT / "examples/example-plan.json").read_text())
+    plan = json.loads((ROOT / "examples/example-plan.json").read_text(encoding="utf-8"))
     del plan["team"][0]["email"]
     del plan["exchanges"][0]["lod"]
     plan["standards"]["codes"] = [{"code": "ACOU"}]
@@ -240,7 +244,7 @@ def test_partial_rows_are_filled_from_templates():
     plan["goals"].append("damaged")                                    # a row saved as a scalar
     d = Path(tempfile.mkdtemp())
     try:
-        (d / "p.json").write_text(json.dumps(plan))
+        (d / "p.json").write_text(json.dumps(plan), encoding="utf-8")
         code, out = bep("export", d / "p.json", "-o", d / "p.md")
         assert code == 0, out
         n = cli.normalize(plan)
@@ -249,11 +253,11 @@ def test_partial_rows_are_filled_from_templates():
         assert n["collab"] == cli.blank_plan()["collab"]
         assert n["goals"][-1] == {"goal": "", "uses": ""}
         (d / "s.json").write_text(json.dumps({"standards": "damaged", "team": ["foo"],
-                                              "exchanges": [{"what": None, "lod": None}]}))
+                                              "exchanges": [{"what": None, "lod": None}]}), encoding="utf-8")
         for cmd in ("status", "export", "validate", "process-map"):
             code, out = bep(cmd, d / "s.json")
             assert "Traceback" not in out, out
-        assert "TODO: Coordination model: LOD" in (d / "p.md").read_text()
+        assert "TODO: Coordination model: LOD" in (d / "p.md").read_text(encoding="utf-8")
     finally:
         shutil.rmtree(d)
 
@@ -471,7 +475,7 @@ def test_app_normalize_matches_cli_on_damaged_plans():
 def test_pages_build_is_a_full_document():
     sys.path.insert(0, str(ROOT / "tools"))
     import build_pages
-    out = build_pages.build((ROOT / "app/index.html").read_text())
+    out = build_pages.build((ROOT / "app/index.html").read_text(encoding="utf-8"))
     head, body = out.split("</head>", 1)
     assert out.startswith("<!doctype html>\n<html lang=\"en\">")
     assert '<meta charset="utf-8">' in head and 'name="viewport"' in head
