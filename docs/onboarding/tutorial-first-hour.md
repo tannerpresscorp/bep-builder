@@ -37,9 +37,10 @@ PASS test_app_downloads_without_the_claude_capability
 PASS test_app_shared_save_keeps_teammates_changes
 PASS test_app_normalize_matches_cli_on_damaged_plans
 PASS test_pages_build_is_a_full_document
+PASS test_plan_operations_are_plain_functions
 ```
 
-That's 14 tests. If a line ends in `(skipped: Node.js not installed)`, the test passed without running its JavaScript half. Install Node to see it run for real.
+That's 15 tests. If a line ends in `(skipped: Node.js not installed)`, the test passed without running its JavaScript half. Install Node to see it run for real.
 
 ## 3. Build a plan with the CLI
 

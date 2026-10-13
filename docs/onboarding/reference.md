@@ -63,6 +63,8 @@ The 11 sections, in order, are: 01 project, 02 team, 03 goals, 04 uses, 05 proce
 
 Run from `skills/bep-builder-cli/scripts/` as `python bep.py COMMAND ...`. Use `python bep.py COMMAND -h` for every option.
 
+The editing and checking commands are thin wrappers around plain functions in `bep.py`'s "plan operations" section: `add_row`, `remove_row`, `set_use`, `set_qc` and `check_names`, alongside `set_path` for `set`. These change the plan or return data and raise `ValueError` with a message for people, so other callers, such as the planned [MCP server](../design/mcp-server.md), behave exactly like the CLI.
+
 | Command | Does |
 |---|---|
 | `init PLAN [--example] [--agency A] [--force]` | Create a plan file (blank, or the example). |
@@ -150,7 +152,7 @@ Identical file copies between skills: `iso13567.py` (bep-builder-cli and nationa
 
 ## Tests
 
-`python tests/test_bep.py` runs every `test_*` function and exits 1 if any fail. There are 14:
+`python tests/test_bep.py` runs every `test_*` function and exits 1 if any fail. There are 15:
 
 | Test | Guards | Needs |
 |---|---|---|
@@ -168,6 +170,7 @@ Identical file copies between skills: `iso13567.py` (bep-builder-cli and nationa
 | `test_app_shared_save_keeps_teammates_changes` | Shared saving sends only changed fields and doesn't overwrite a teammate's edits. | Node |
 | `test_app_normalize_matches_cli_on_damaged_plans` | The app's `normalize()` repairs a damaged plan exactly as Python's does. | Node |
 | `test_pages_build_is_a_full_document` | `tools/build_pages.py` produces a full HTML document, and running it twice changes nothing. | |
+| `test_plan_operations_are_plain_functions` | `add_row`, `remove_row`, `set_use`, `set_qc` and `check_names` return data and raise `ValueError` rather than printing and exiting. | |
 
 Tests that need Node or openpyxl print `(skipped: ...)` and **pass** when the tool is missing. CI has both, so run them locally with both before pushing.
 

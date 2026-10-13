@@ -738,6 +738,104 @@ def is_sheet(n):
     return bool(re.match(r"^[A-Za-z]{1,2}[-_]?\d", n))
 
 
+# ---------------------------------------------------------------- plan operations
+# The logic behind the editing and checking commands, as plain functions: they change the
+# plan or return data, and raise ValueError with a message for people. The commands below
+# print and exit around them; other callers (such as an MCP server) use them directly.
+def _check_list(list_path):
+    if list_path not in ROW_TEMPLATES:
+        raise ValueError(f"Unknown list '{list_path}'. Lists: {', '.join(ROW_TEMPLATES)}")
+
+
+def add_row(plan, list_path, fields):
+    """Add a row to a list, filling the first placeholder row instead of appending after it."""
+    _check_list(list_path)
+    row = dict(ROW_TEMPLATES[list_path])
+    for k, v in fields.items():
+        if k not in row:
+            raise ValueError(f"'{k}' isn't a field of {list_path}. Fields: {', '.join(row)}")
+        row[k] = v
+    lst = get_path(plan, list_path)
+    # A placeholder row is blank, or still exactly the new-plan default.
+    try:
+        default_row = get_path(blank_plan(), list_path)[0]
+    except IndexError:
+        default_row = None
+    empty = next((i for i, r in enumerate(lst)
+                  if r == default_row or not any(filled(x) for x in r.values())), None)
+    if empty is not None:
+        lst[empty] = row
+    else:
+        lst.append(row)
+    return row
+
+
+def remove_row(plan, list_path, index):
+    """Remove and return a row (0-based index)."""
+    _check_list(list_path)
+    lst = get_path(plan, list_path)
+    if not 0 <= index < len(lst):
+        raise ValueError(f"{list_path} has {len(lst)} rows; index {index} doesn't exist")
+    return lst.pop(index)
+
+
+def set_use(plan, use_id, on=True, party=None, value=None, flow=None):
+    """Turn a BIM use on or off and set the details given (None leaves a field as it is)."""
+    if use_id not in USE_IDS:
+        raise ValueError(f"Unknown BIM use '{use_id}'. Run 'catalog' for ids.")
+    u = plan["uses"][use_id]
+    u["on"] = on
+    for k, v in (("party", party), ("value", value), ("flow", flow)):
+        if v is not None:
+            u[k] = v
+    if use_id == "cobie" and on:
+        plan["cobie"] = True
+    return u
+
+
+def set_qc(plan, qc_id, on=True, who=None, freq=None, tool=None):
+    """Configure a QC check (visual, clash, standards, integrity) or a model rule (a0-a8, d0-d8)."""
+    if qc_id in plan["checks"]:
+        if not on:
+            raise ValueError(f"Checks can't be turned off; '{qc_id}' always appears in section 10.")
+        c = plan["checks"][qc_id]
+        for k, v in (("tool", tool), ("who", who), ("freq", freq)):
+            if v is not None:
+                c[k] = v
+        return c
+    if qc_id in plan["qc"]:
+        if tool is not None:
+            raise ValueError("--tool applies to checks (visual, clash, standards, integrity), not model rules.")
+        r = plan["qc"][qc_id]
+        r["on"] = on
+        for k, v in (("who", who), ("freq", freq)):
+            if v is not None:
+                r[k] = v
+        return r
+    raise ValueError(f"Unknown rule or check '{qc_id}'. Run 'catalog' for ids.")
+
+
+def check_names(names, plan=None):
+    """Check layer names and sheet ids, applying the plan's status field and ISO 13567 profile.
+
+    Returns {"profile": description or None, "status_field": id or None,
+             "results": [{"name", "kind": "layer"|"sheet", "problems": [...]}]}.
+    """
+    prof = profile_for(plan) if plan and plan["standards"]["iso13567"] else None
+    sf = plan["standards"]["statusField"] if plan else "both"
+    results = []
+    for n in names:
+        kind = "sheet" if is_sheet(n) else "layer"
+        if kind == "sheet":
+            pr = check_sheet(n)
+        else:
+            pr = iso13567.check(n, prof) if prof else check_layer(n, sf)
+        results.append({"name": n, "kind": kind, "problems": pr})
+    return {"profile": prof.describe() if prof else None,
+            "status_field": sf if plan else None,
+            "results": results}
+
+
 # ---------------------------------------------------------------- commands
 def cmd_init(a):
     if os.path.exists(a.plan) and not a.force:
@@ -799,87 +897,47 @@ def cmd_set(a):
 
 def cmd_add(a):
     plan = load(a.plan)
-    if a.list not in ROW_TEMPLATES:
-        sys.exit(f"Unknown list '{a.list}'. Lists: {', '.join(ROW_TEMPLATES)}")
-    row = dict(ROW_TEMPLATES[a.list])
-    for kv in a.fields:
-        if "=" not in kv:
-            sys.exit(f"Expected key=value, got '{kv}'")
-        k, v = kv.split("=", 1)
-        if k not in row:
-            sys.exit(f"'{k}' isn't a field of {a.list}. Fields: {', '.join(row)}")
-        row[k] = v
-    lst = get_path(plan, a.list)
-    # Replace the first placeholder row (blank, or still exactly the new-plan default)
-    # instead of appending after it.
     try:
-        default_row = get_path(blank_plan(), a.list)[0]
-    except IndexError:
-        default_row = None
-    empty = next((i for i, r in enumerate(lst)
-                  if r == default_row or not any(filled(x) for x in r.values())), None)
-    if empty is not None:
-        lst[empty] = row
-    else:
-        lst.append(row)
+        _check_list(a.list)
+        fields = {}
+        for kv in a.fields:
+            if "=" not in kv:
+                raise ValueError(f"Expected key=value, got '{kv}'")
+            k, v = kv.split("=", 1)
+            fields[k] = v
+        row = add_row(plan, a.list, fields)
+    except ValueError as e:
+        sys.exit(str(e))
     save(a.plan, plan)
     print(f"Added to {a.list}: {row}")
 
 
 def cmd_remove(a):
     plan = load(a.plan)
-    if a.list not in ROW_TEMPLATES:
-        sys.exit(f"Unknown list '{a.list}'. Lists: {', '.join(ROW_TEMPLATES)}")
-    lst = get_path(plan, a.list)
     try:
-        if a.index < 0:
-            raise IndexError
-        removed = lst.pop(a.index)
-    except IndexError:
-        sys.exit(f"{a.list} has {len(lst)} rows; index {a.index} doesn't exist")
+        removed = remove_row(plan, a.list, a.index)
+    except ValueError as e:
+        sys.exit(str(e))
     save(a.plan, plan)
     print(f"Removed from {a.list}: {removed}")
 
 
 def cmd_use(a):
     plan = load(a.plan)
-    if a.use_id not in USE_IDS:
-        sys.exit(f"Unknown BIM use '{a.use_id}'. Run 'catalog' for ids.")
-    u = plan["uses"][a.use_id]
-    u["on"] = not a.off
-    for k in ("party", "value", "flow"):
-        v = getattr(a, k)
-        if v is not None:
-            u[k] = v
-    if a.use_id == "cobie" and not a.off:
-        plan["cobie"] = True
+    try:
+        u = set_use(plan, a.use_id, on=not a.off, party=a.party, value=a.value, flow=a.flow)
+    except ValueError as e:
+        sys.exit(str(e))
     save(a.plan, plan)
     print(f"{a.use_id}: {u}")
 
 
 def cmd_qc(a):
     plan = load(a.plan)
-    if a.rule_id in plan["checks"]:
-        if a.off:
-            sys.exit(f"Checks can't be turned off; '{a.rule_id}' always appears in section 10.")
-        c = plan["checks"][a.rule_id]
-        for k in ("tool", "who", "freq"):
-            v = getattr(a, k)
-            if v is not None:
-                c[k] = v
-        out = c
-    elif a.rule_id in plan["qc"]:
-        if a.tool is not None:
-            sys.exit("--tool applies to checks (visual, clash, standards, integrity), not model rules.")
-        r = plan["qc"][a.rule_id]
-        r["on"] = not a.off
-        for k in ("who", "freq"):
-            v = getattr(a, k)
-            if v is not None:
-                r[k] = v
-        out = r
-    else:
-        sys.exit(f"Unknown rule or check '{a.rule_id}'. Run 'catalog' for ids.")
+    try:
+        out = set_qc(plan, a.rule_id, on=not a.off, who=a.who, freq=a.freq, tool=a.tool)
+    except ValueError as e:
+        sys.exit(str(e))
     save(a.plan, plan)
     print(f"{a.rule_id}: {out}")
 
@@ -921,23 +979,16 @@ def cmd_check_names(a):
             names += [x for line in fh for x in re.split(r"[\s,]+", line) if x]
     if not names:
         sys.exit("Give names as arguments or with --file")
-    plan = load(a.plan) if a.plan else None
-    prof = profile_for(plan) if plan and plan["standards"]["iso13567"] else None
-    sf = plan["standards"]["statusField"] if plan else "both"
-    if prof:
-        print(f"ISO 13567 profile: {prof.describe()}\n")
-    elif plan:
-        print(f"Status field: {STATUS_FIELDS[sf]}\n")
-    bad = 0
+    res = check_names(names, load(a.plan) if a.plan else None)
+    if res["profile"]:
+        print(f"ISO 13567 profile: {res['profile']}\n")
+    elif res["status_field"]:
+        print(f"Status field: {STATUS_FIELDS[res['status_field']]}\n")
     print("| Name | Kind | Valid? | Problem |\n|---|---|---|---|")
-    for n in names:
-        kind = "sheet" if is_sheet(n) else "layer"
-        if kind == "sheet":
-            pr = check_sheet(n)
-        else:
-            pr = iso13567.check(n, prof) if prof else check_layer(n, sf)
-        bad += bool(pr)
-        print(f"| {n} | {kind} | {'No' if pr else 'Yes'} | {'; '.join(pr) or '—'} |")
+    for r in res["results"]:
+        pr = r["problems"]
+        print(f"| {r['name']} | {r['kind']} | {'No' if pr else 'Yes'} | {'; '.join(pr) or '—'} |")
+    bad = sum(1 for r in res["results"] if r["problems"])
     print(f"\n{len(names) - bad} valid, {bad} to fix")
 
 

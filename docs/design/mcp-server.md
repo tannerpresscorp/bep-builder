@@ -124,7 +124,7 @@ Four commands keep their logic inside `cmd_*` functions that `print()` and `sys.
 | `qc` | Checks vs rules, `--off` / `--tool` validation |
 | `check-names` | Choose ISO vs NCS checker from the plan |
 
-Move each into a plain function (`add_row(plan, list, fields)`, `set_use(plan, use_id, **kw)`, `set_qc(plan, id, **kw)`, `check_names(names, plan=None)`) that returns data and raises `ValueError`. Then make `cmd_*` a thin wrapper around it.
+Move each into a plain function (`add_row(plan, list, fields)`, `set_use(plan, use_id, **kw)`, `set_qc(plan, id, **kw)`, `check_names(names, plan=None)`) that returns data and raises `ValueError`. Then make `cmd_*` a thin wrapper around it. `remove` gets the same treatment (`remove_row(plan, list, index)`), so every write tool has a plain function to call. *(Implemented as step 1 of the delivery plan.)*
 
 That keeps the CLI and MCP behaviour identical by construction. The existing tests cover the CLI side of all four, so they guard the refactor. The other tools already map onto pure functions: `load`, `save`, `get_path`, `set_path`, `section_status`, `build_doc`, `collect_todos`, `to_markdown`, `to_html`, `processmap.build` and `iso13567.*`.
 
