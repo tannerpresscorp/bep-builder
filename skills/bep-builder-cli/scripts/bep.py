@@ -174,12 +174,12 @@ def example_plan():
     p = blank_plan()
     p["project"] = {"name": "EXAMPLE — Riverside Outpatient Clinic", "owner": "Example owner (replace)",
                     "location": "Springfield, IL", "delivery": "Design-bid-build", "agency": "va",
-                    "phase": "Design development", "start": "", "cui": "no", "iso": True}
+                    "phase": "Design development", "start": "2026-09-01", "cui": "no", "iso": True}
     p["team"] = [
         {"role": "BIM manager", "org": "Example Architects", "name": "Example name", "email": ""},
-        {"role": "Architectural lead", "org": "Example Architects", "name": "", "email": ""},
-        {"role": "MEP lead", "org": "Example Engineers", "name": "", "email": ""},
-        {"role": "Owner representative", "org": "Example owner", "name": "", "email": ""},
+        {"role": "Architectural lead", "org": "Example Architects", "name": "Example architect", "email": ""},
+        {"role": "MEP lead", "org": "Example Engineers", "name": "Example engineer", "email": ""},
+        {"role": "Owner representative", "org": "Example owner", "name": "Example owner rep", "email": ""},
     ]
     p["goals"] = [
         {"goal": "Catch MEP conflicts before construction documents are issued", "uses": "3D coordination"},
@@ -191,6 +191,15 @@ def example_plan():
                               value="Reduces field rework on a ceiling-congested clinic",
                               flow="MEP lead uploads NWC exports each Friday → BIM manager runs clash tests → "
                                    "issues assigned in Tuesday coordination meeting → fixes in next upload.")
+    p["uses"]["authoring"].update(party="Architectural lead (Example architect)",
+                               value="One coordinated model drives drawings, schedules and quantities",
+                               flow="Discipline leads model in Revit from the firm template → work-share to ACC daily → BIM manager publishes the composite model each Friday.")
+    p["uses"]["drawings"].update(party="Architectural lead (Example architect)",
+                               value="Sheets stay consistent with the model as the design changes",
+                               flow="Views and schedules are placed from the model → sheets checked against the NCS sheet list → PDF and DWG sets issued at each milestone.")
+    p["uses"]["cobie"].update(party="Owner representative (Example owner rep)",
+                               value="Facilities team loads equipment data into their CMMS without re-keying",
+                               flow="Design team adds COBie parameters to equipment families → contractor fills serial and warranty data during construction → owner rep checks the COBie workbook before closeout.")
     p["cobie"] = True
     p["exchanges"] = [
         {"what": "Coordination model", "from": "MEP lead", "to": "BIM manager",
@@ -200,12 +209,21 @@ def example_plan():
     ]
     p["collab"].update(cde="Autodesk Construction Cloud", sharing="Weekly, Friday",
                        meetings="Coordination meeting every Tuesday",
-                       coords="Shared coordinates from the site model (survey point at grid A/1)")
+                       coords="Shared coordinates from the site model (survey point at grid A/1)",
+                       naming="[Project]-[Originator]-[Discipline]-[Building].rvt, e.g. ROC-EXA-A-B01.rvt",
+                       changes="Changes are requested by design change request or owner directive, reviewed in the Tuesday meeting, approved by the owner rep, and logged in the ACC issue log before models are updated.")
     p["tech"] = [
         {"discipline": "Architectural", "software": "Revit", "version": "2026", "formats": "RVT, IFC, DWG"},
         {"discipline": "MEP", "software": "Revit", "version": "2026", "formats": "RVT, NWC"},
         {"discipline": "Coordination", "software": "Navisworks Manage", "version": "2026", "formats": "NWD, NWF"},
     ]
+    p["standards"]["plotting"] = "Firm NCS pen table (example-ncs.ctb)"
+    p["checks"] = {
+        "visual": {"tool": "Revit and Navisworks walkthrough", "who": "Architectural lead (Example architect)", "freq": "Before each model share"},
+        "clash": {"tool": "Navisworks Manage Clash Detective", "who": "BIM manager (Example name)", "freq": "Weekly"},
+        "standards": {"tool": "bep.py check-names on exported layer and sheet lists", "who": "BIM manager (Example name)", "freq": "Before each submission"},
+        "integrity": {"tool": "Revit Warnings review and Purge Unused", "who": "MEP lead (Example engineer)", "freq": "At each design milestone"},
+    }
     p["deliver"] = [{"item": "Composite model", "format": "RVT + IFC", "due": "Construction documents"},
                     {"item": "COBie workbook", "format": "XLSX", "due": "Closeout"}]
     return p
