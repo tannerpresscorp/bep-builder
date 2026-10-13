@@ -480,6 +480,39 @@ def test_pages_build_is_a_full_document():
     assert body.lstrip().startswith('<body>\n<div class="wrap">') and body.rstrip().endswith("</body>\n</html>")
     assert build_pages.build(out) == out                              # idempotent
 
+
+def test_plan_operations_are_plain_functions():
+    """add_row, remove_row, set_use, set_qc and check_names return data and raise ValueError
+    instead of printing and exiting, so other callers (the planned MCP server) can use them."""
+    sys.path.insert(0, str(CLI))
+    import bep as cli
+    plan = cli.blank_plan()
+    row = cli.add_row(plan, "team", {"role": "Architect", "name": "Ann"})
+    assert plan["team"] == [row] and row["org"] == ""                   # filled the placeholder row
+    cli.add_row(plan, "team", {"role": "MEP"})
+    assert len(plan["team"]) == 2
+    assert cli.remove_row(plan, "team", 1)["role"] == "MEP" and len(plan["team"]) == 1
+    for bad in (lambda: cli.add_row(plan, "nope", {}), lambda: cli.add_row(plan, "team", {"x": 1}),
+                lambda: cli.remove_row(plan, "team", 5), lambda: cli.remove_row(plan, "team", -1),
+                lambda: cli.set_use(plan, "nope"), lambda: cli.set_qc(plan, "visual", on=False),
+                lambda: cli.set_qc(plan, "a0", tool="T"), lambda: cli.set_qc(plan, "zz")):
+        try:
+            bad()
+            assert False, "expected ValueError"
+        except ValueError:
+            pass
+    assert cli.set_use(plan, "cobie", party="Owner")["on"] and plan["cobie"] is True
+    assert cli.set_use(plan, "cobie", on=False)["party"] == "Owner"    # None leaves a field alone
+    assert cli.set_qc(plan, "clash", tool="Navisworks")["tool"] == "Navisworks"
+    assert cli.set_qc(plan, "a0", on=False)["on"] is False
+    res = cli.check_names(["A-WALL-D", "a-door", "AD-101"])
+    assert res["profile"] is None and res["status_field"] is None
+    assert [r["kind"] for r in res["results"]] == ["layer", "layer", "sheet"]
+    assert [bool(r["problems"]) for r in res["results"]] == [False, True, True]
+    plan["standards"]["iso13567"] = True
+    res = cli.check_names(["A-WALL-FULL-TEXT-N", "G-ANNO-TEXT-N"], plan)
+    assert res["profile"] and [bool(r["problems"]) for r in res["results"]] == [False, True]
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in [(k, v) for k, v in dict(globals()).items() if k.startswith("test_") and callable(v)]:

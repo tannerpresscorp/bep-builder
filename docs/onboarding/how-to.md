@@ -25,7 +25,7 @@ node --version          # any recent Node; CI uses 20
 python tests/test_bep.py
 ```
 
-You should see 14 `PASS` lines and no `skipped`. In a Codespace or dev container, all of this is already installed.
+You should see 15 `PASS` lines and no `skipped`. In a Codespace or dev container, all of this is already installed.
 
 ## Run one test
 
