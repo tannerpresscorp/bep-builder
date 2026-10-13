@@ -278,7 +278,11 @@ def load(path):
 def save(path, plan):
     """Write the plan atomically: a crash mid-write leaves the previous file intact."""
     plan["standards"]["status"] = plan["standards"].get("statusField", "status") != "none"
-    folder = os.path.dirname(os.path.abspath(path))
+    path = os.path.realpath(path)   # write through a symlink to the real plan, keeping the link
+    if os.path.exists(path) and not os.access(path, os.W_OK):
+        # os.replace would swap out a read-only plan; refuse, as writing in place would
+        raise PermissionError(f"{path} is read-only")
+    folder = os.path.dirname(path)
     fd, tmp = tempfile.mkstemp(prefix=".bep-", suffix=".json", dir=folder)
     try:
         # mkstemp creates the file owner-only (0600); keep the plan's existing permissions,
@@ -1138,7 +1142,10 @@ def main(argv=None):
     s.add_argument("-o", "--output"); s.set_defaults(fn=cmd_export)
 
     a = ap.parse_args(argv)
-    a.fn(a)
+    try:
+        a.fn(a)
+    except PermissionError as e:
+        sys.exit(f"Couldn't save the plan: {e}")
 
 
 if __name__ == "__main__":

@@ -212,6 +212,16 @@ def test_set_refuses_sections_and_keeps_file_valid():
             os.chmod(d / "p.json", 0o700)   # owner-only, but not mkstemp's 0o600
             assert bep("set", d / "p.json", "project.name", "X")[0] == 0
             assert (d / "p.json").stat().st_mode & 0o777 == 0o700       # permissions kept
+            (d / "link.json").symlink_to("p.json")
+            assert bep("set", d / "link.json", "project.name", "Via link")[0] == 0
+            assert (d / "link.json").is_symlink()                       # link kept
+            assert json.loads((d / "p.json").read_text())["project"]["name"] == "Via link"
+            if os.geteuid() != 0:                                       # root ignores file modes
+                os.chmod(d / "p.json", 0o400)
+                code, out = bep("set", d / "p.json", "project.name", "Y")
+                assert code != 0 and "read-only" in out, out
+                assert json.loads((d / "p.json").read_text())["project"]["name"] == "Via link"
+                os.chmod(d / "p.json", 0o600)
     finally:
         shutil.rmtree(d)
 
