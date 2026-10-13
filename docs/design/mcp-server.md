@@ -1,6 +1,6 @@
 # Design: `bep_mcp`, an MCP server for bep-builder
 
-Status: **being built.** Steps 1–3 of the [delivery plan](#6-delivery-plan) are done: `bep.py`'s plain functions, and the server in `servers/bep_mcp/` with its read-only and write tools.
+Status: **being built.** Steps 1–4 of the [delivery plan](#6-delivery-plan) are done: `bep.py`'s plain functions, the server in `servers/bep_mcp/` with its read-only and write tools, and its packaging and documentation.
 
 **Changes from the original proposal, found while building:**
 - **Location:** the server lives in `servers/bep_mcp/`, not `mcp/bep_mcp/`. A top-level `mcp/` folder would shadow the `mcp` SDK package whenever Python runs from the repository root.
@@ -191,7 +191,7 @@ claude mcp add bep -e BEP_PLANS_DIR="$HOME/plans" -- bep_mcp
 1. **Refactor** `add`, `use`, `qc` and `check-names` in `bep.py` into plain functions (§3.2). Existing tests must pass unchanged. Size: S. *(Done.)*
 2. **Server skeleton:** `servers/bep_mcp/` with the sandbox, error mapping and the 10 read-only tools, plus `test_mcp.py` (run in CI). Size: M. *(Done.)*
 3. **Write tools** (`create`, `set`, `add`, `remove`, `use`, `qc`, `save_document`), plus the parity tests and a concurrency test for the write lock. Size: M. *(Done.)*
-4. **Packaging and CI:** add `pyproject.toml`, put `pip install mcp` in CI, and document it in `README.md` and `docs/onboarding/`. Size: S.
+4. **Packaging and CI:** add `pyproject.toml`, put `pip install mcp` in CI, and document it in `README.md` and `docs/onboarding/`. Size: S. *(Done.)*
 5. **Evaluations:** `evals.xml` with 10 questions, then fix any tool descriptions they show to be unclear. Size: M.
 6. *(Phase 2)* Resources and the `start_bep` prompt. Size: S.
 

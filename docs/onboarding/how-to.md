@@ -14,18 +14,21 @@ Commands run from the repository root unless a guide says otherwise.
 - [Edit a module that is copied between skills](#edit-a-module-that-is-copied-between-skills)
 - [Edit a skill or its evals](#edit-a-skill-or-its-evals)
 - [Deploy the web app](#deploy-the-web-app)
+- [Run the MCP server locally](#run-the-mcp-server-locally)
+- [Add or change an MCP tool](#add-or-change-an-mcp-tool)
 
 ## Run the tests the way CI does
 
 CI runs the suite on Ubuntu and Windows with Node, openpyxl and defusedxml installed. Without Node or openpyxl, several tests print `(skipped: ...)` and still pass ([which ones](reference.md#tests)). Install everything so nothing is skipped:
 
 ```bash
-python -m pip install openpyxl defusedxml
+python -m pip install openpyxl defusedxml "mcp>=2,<3"
 node --version          # any recent Node; CI uses 20
 python tests/test_bep.py
+python tests/test_mcp.py
 ```
 
-You should see 15 `PASS` lines and no `skipped`. In a Codespace or dev container, all of this is already installed.
+You should see 15 `PASS` lines, then 8 more, and no `skipped`. In a Codespace or dev container, all of this is already installed.
 
 ## Run one test
 
@@ -138,3 +141,23 @@ cmp -s _site/live.html _site/index.html && echo "live site matches master"
 ```
 
 Don't add a second workflow that deploys to Pages; see [architecture.md](architecture.md#deployment).
+
+## Run the MCP server locally
+
+The server needs Python 3.10 or newer.
+
+```bash
+python -m pip install -e servers/bep_mcp
+mkdir -p ~/plans
+claude mcp add bep -e BEP_PLANS_DIR="$HOME/plans" -- bep_mcp
+```
+
+Then, in Claude Code, ask for something like "create an example plan called demo.json and list its TODOs". The server logs one line per tool call to stderr.
+
+## Add or change an MCP tool
+
+1. If the tool needs new plan logic, add it to `bep.py` as a plain function that returns data and raises `ValueError` for bad input. Make the CLI command a thin wrapper around it, so both share one rule.
+2. Add the tool in `create_server()` in `servers/bep_mcp/bep_mcp/server.py`, with the `@_logged` decorator and the right annotation: `READ`, `EDIT` or `DESTRUCTIVE`. Take the plan as a file name and resolve it with `resolve_plan`; write through `_edit` so the change holds the write lock.
+3. Name it `bep_<verb>_<noun>` and write the description for the model: what it does, what to call first, and what each argument accepts.
+4. In `tests/test_mcp.py`, add the tool to `test_tool_list_and_annotations` and compare its output with the matching CLI command.
+5. List it in `servers/bep_mcp/README.md` and in [reference.md](reference.md#mcp-server).

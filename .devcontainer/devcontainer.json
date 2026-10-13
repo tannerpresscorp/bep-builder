@@ -6,7 +6,7 @@
       "version": "20"
     }
   },
-  "postCreateCommand": "python -m pip install openpyxl defusedxml",
+  "postCreateCommand": "python -m pip install openpyxl defusedxml \"mcp>=2,<3\"",
   "forwardPorts": [8000],
   "portsAttributes": {
     "8000": {
