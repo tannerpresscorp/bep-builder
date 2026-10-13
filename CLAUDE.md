@@ -9,7 +9,7 @@ Tools for writing a BIM Execution Plan (BEP) under the U.S. National CAD Standar
 - `app/index.html`: the web app. It is a single self-contained page with no build step and no dependencies.
 - `skills/bep-builder-cli/scripts/bep.py`: the command-line tool. It uses only the Python 3.8+ standard library; only `maps-workbook` needs `openpyxl`.
 - `skills/*/`: Claude skills. Each has a `SKILL.md`, its `scripts/`, `references/` and `evals/evals.json`.
-- `servers/bep_mcp/`: an MCP server (stdio, Python 3.10+, `mcp>=2,<3`) that imports `bep.py` and exposes its operations as tools on the plans in `BEP_PLANS_DIR`. Design: `docs/design/mcp-server.md`.
+- `servers/bep_mcp/`: an MCP server (stdio, Python 3.10+, `mcp>=2,<3`) that imports `bep.py` and exposes its operations as tools (plus two resources and a `start_bep` prompt) on the plans in `BEP_PLANS_DIR`. Design: `docs/design/mcp-server.md`.
 
 For a longer walkthrough (tutorial, architecture, how-to guides, reference), see `docs/onboarding/`.
 

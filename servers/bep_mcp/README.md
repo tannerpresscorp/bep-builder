@@ -50,6 +50,17 @@ Writes run one at a time under a lock, so overlapping requests can't overwrite e
 
 Data tools return JSON, both as text and as `structuredContent`. Document tools (map, export, definition) return plain text. A failure returns an error result carrying the CLI's own message, so the model can correct its input.
 
+## Resources and prompt
+
+For clients that attach context rather than call tools:
+
+| Resource | Contents |
+|---|---|
+| `bep://catalog` | The same JSON as `bep_get_catalog` |
+| `bep://plans/{plan}` | One plan, e.g. `bep://plans/clinic.json`: the same JSON as `bep_get_plan` without a path. Read-only, with the same name rules as the tools. |
+
+The **`start_bep`** prompt (arguments `plan`, default `plan.json`, and optional `agency`) asks the model to interview you section by section, in plan order, and save each answer with the tools. Anything you don't say stays a TODO. If the plan already exists, it picks up from the first section that isn't done. In Claude Code it appears as `/mcp__bep__start_bep`.
+
 ## Evaluations
 
 `evals/evals.xml` holds 10 questions a model should be able to answer using only this server's read-only tools, with `BEP_PLANS_DIR` set to `evals/plans`. That folder has two example plans: `clinic.json`, which is complete, and `barracks.json`, a USACE plan that has just been started. The questions test whether the tool descriptions are clear enough for a model to find the right tool and arguments, for example which dotted path to read or how to read the process map. To run them, connect any MCP client to the server with that folder, ask each question, and compare the final answer with `<answer>`. `test_eval_answers_match_the_fixtures` keeps the answers true as the code changes.

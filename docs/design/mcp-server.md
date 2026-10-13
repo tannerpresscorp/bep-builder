@@ -1,6 +1,6 @@
 # Design: `bep_mcp`, an MCP server for bep-builder
 
-Status: **being built.** Steps 1–5 of the [delivery plan](#6-delivery-plan) are done: `bep.py`'s plain functions, the server in `servers/bep_mcp/` with its read-only and write tools, its packaging and documentation, and its evaluation questions. Phase 2 (step 6) remains.
+Status: **built.** All six steps of the [delivery plan](#6-delivery-plan) are done: `bep.py`'s plain functions, the server in `servers/bep_mcp/` with its read-only and write tools, its packaging and documentation, its evaluation questions, and the phase 2 resources and `start_bep` prompt.
 
 **Changes from the original proposal, found while building:**
 - **Location:** the server lives in `servers/bep_mcp/`, not `mcp/bep_mcp/`. A top-level `mcp/` folder would shadow the `mcp` SDK package whenever Python runs from the repository root.
@@ -193,7 +193,7 @@ claude mcp add bep -e BEP_PLANS_DIR="$HOME/plans" -- bep_mcp
 3. **Write tools** (`create`, `set`, `add`, `remove`, `use`, `qc`, `save_document`), plus the parity tests and a concurrency test for the write lock. Size: M. *(Done.)*
 4. **Packaging and CI:** add `pyproject.toml`, put `pip install mcp` in CI, and document it in `README.md` and `docs/onboarding/`. Size: S. *(Done.)*
 5. **Evaluations:** `evals.xml` with 10 questions, then fix any tool descriptions they show to be unclear. Size: M. *(Done. A first run answered all 10; it led to clearer descriptions for `bep_get_plan`, `bep_get_process_map`, `bep_convert_layers` and `bep_set_qc`.)*
-6. *(Phase 2)* Resources and the `start_bep` prompt. Size: S.
+6. *(Phase 2)* Resources and the `start_bep` prompt. Size: S. *(Done. The prompt takes an optional `agency`, and resumes an existing plan from its first unfinished section.)*
 
 Each step is its own PR, and none changes the plan format, the web app or the skills' instructions.
 

@@ -284,6 +284,62 @@ def test_eval_answers_match_the_fixtures():
         assert answer == got, (question, answer, got)
 
 
+def resources_and_prompt(plans_dir, steps):
+    """Run [(kind, arg, extra)] against one connection: kind is 'read' (a resource URI) or 'prompt'
+    (start_bep arguments). Return [(ok, text)] where text is the content or the error message."""
+    async def go():
+        out = []
+        async with Client(create_server(plans_dir)) as c:
+            out.append(([r.uri for r in (await c.list_resources()).resources],
+                        [t.uri_template for t in (await c.list_resource_templates()).resource_templates],
+                        [(p.name, [a.name for a in p.arguments]) for p in (await c.list_prompts()).prompts]))
+            for kind, arg in steps:
+                try:
+                    if kind == "read":
+                        out.append((True, (await c.read_resource(arg)).contents[0].text))
+                    else:
+                        out.append((True, (await c.get_prompt("start_bep", arg)).messages[0].content.text))
+                except Exception as e:
+                    out.append((False, str(e)))
+        return out
+    return asyncio.run(go())
+
+
+def test_resources_match_the_tools():
+    with Plans() as d:
+        listing, *res = resources_and_prompt(d, [
+            ("read", "bep://catalog"), ("read", "bep://plans/ex.json"),
+            ("read", "bep://plans/missing.json"), ("read", "bep://plans/../ex.json")])
+        assert [str(u) for u in listing[0]] == ["bep://catalog"]
+        assert listing[1] == ["bep://plans/{plan}"]
+        assert res[0][0] and json.loads(res[0][1]) == call(d, "bep_get_catalog")[1]
+        assert res[1][0] and json.loads(res[1][1]) == call(d, "bep_get_plan", plan="ex.json")[1]["value"]
+        assert not res[2][0] and "bep_list_plans" in res[2][1]
+        assert not res[3][0]
+
+
+def test_start_bep_prompt():
+    import re
+    sys.path.insert(0, str(CLI))
+    import bep
+    with Plans() as d:
+        listing, new, existing, bad_name, bad_agency = resources_and_prompt(d, [
+            ("prompt", {"plan": "barracks.json", "agency": "usace"}), ("prompt", {"plan": "ex.json"}),
+            ("prompt", {"plan": "../x.json"}), ("prompt", {"plan": "x.json", "agency": "nasa"})])
+        assert listing[2] == [("start_bep", ["plan", "agency"])]
+        assert new[0] and "bep_create_plan" in new[1] and '"usace"' in new[1]
+        assert existing[0] and "already exists" in existing[1] and "bep_create_plan" not in existing[1]
+        assert not bad_name[0] and "isn't a plan file name" in bad_name[1]
+        assert not bad_agency[0] and "usace" in bad_agency[1]
+        # Everything the prompt tells the model to use must exist: tool names, list fields, plan keys.
+        assert set(re.findall(r"bep_\w+", new[1])) <= READ_TOOLS | WRITE_TOOLS
+        for name, fields in re.findall(r"bep_add_row on ([\w.]+) \(([^)]*)\)", new[1]):
+            assert set(fields.split(", ")) <= set(bep.ROW_TEMPLATES[name]), name
+        blank = bep.blank_plan()
+        for section, rest in re.findall(r"bep_set_value on (\w+)\.(\w+(?:, \w+)*)", new[1]):
+            assert set(rest.split(", ")) <= set(blank[section]), section
+
+
 def test_server_needs_a_plans_folder():
     try:
         create_server(str(ROOT / "no-such-folder"))
