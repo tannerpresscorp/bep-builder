@@ -170,6 +170,11 @@ def to_markdown(d):
 
 
 if __name__ == "__main__":
+    # Windows pipes and redirects default to the ANSI code page (cp1252), which can't
+    # encode the symbols this tool prints; write UTF-8 everywhere instead.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8")
     args = sys.argv[1:]
     as_json = "--json" in args
     args = [a for a in args if a != "--json"]

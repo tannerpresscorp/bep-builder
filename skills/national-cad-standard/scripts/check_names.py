@@ -122,4 +122,9 @@ def main(argv):
 
 
 if __name__ == "__main__":
+    # Windows pipes and redirects default to the ANSI code page (cp1252), which can't
+    # encode the symbols this tool prints; write UTF-8 everywhere instead.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8")
     sys.exit(main(sys.argv[1:]))
