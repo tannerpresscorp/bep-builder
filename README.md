@@ -14,7 +14,7 @@ Whole Building Design Guide (WBDG) criteria, and agency overrides.
 
 The web app is published to GitHub Pages at
 <https://imatthewtanner.github.io/bep-builder/> on every push to `master` that changes
-`app/` (`.github/workflows/pages.yml`). The workflow runs `tools/build_pages.py` to wrap the
+`app/` or `tools/build_pages.py` (`.github/workflows/pages.yml`). The workflow runs `tools/build_pages.py` to wrap the
 artifact page in a full HTML document (doctype, charset, language, viewport) for Pages.
 
 ## Quick start (CLI)

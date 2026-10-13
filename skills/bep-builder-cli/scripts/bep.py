@@ -254,7 +254,8 @@ def normalize(p):
         if not isinstance(rows, list):
             parent[key] = copy.deepcopy(get_path(blank_plan(), list_path))
             continue
-        parent[key] = [{**template, **row} if isinstance(row, dict) else row for row in rows]
+        # a row damaged into a scalar (e.g. by an old `set team.0 foo`) becomes a blank row
+        parent[key] = [{**template, **row} if isinstance(row, dict) else dict(template) for row in rows]
     return plan
 
 
@@ -264,8 +265,8 @@ def load(path):
     # Accept the web app's stored document ({"plan": {...}, "updatedBy": ..., ...})
     if isinstance(data, dict) and "plan" in data and "project" not in data:
         data = data["plan"]
-    std = (data or {}).get("standards", {})
-    if "statusField" not in std and std.get("status") is False:
+    std = data.get("standards") if isinstance(data, dict) else None
+    if isinstance(std, dict) and "statusField" not in std and std.get("status") is False:
         std["statusField"] = "none"   # older plans stored only an on/off flag
     plan = normalize(data)
     plan["standards"]["status"] = plan["standards"]["statusField"] != "none"
