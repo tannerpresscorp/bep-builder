@@ -367,6 +367,7 @@ let lastLocalEdit = 0, saveTimer = null, saving = false, saveQueued = false, pen
 let dirty = new Set(), fullSave = false, docExists = null, latestRemote = null;
 let inFlight = [], inFlightFull = false;   // what the save now in progress is writing
 let committed = [], committedAt = null;    // what the last save wrote, until its echo arrives
+let committedFull = false;                 // the last save wrote the whole plan, until its echo arrives
 let confirmReset = false, confirmExample = false;
 
 /* ---------- Helpers ---------- */
@@ -1161,6 +1162,7 @@ async function flush() {
     // existing shared plan gets a merge, not a whole-plan overwrite from this browser.
     try { docExists = (await planRef.get()).exists; }
     catch (e) { saving = false; saveTimer = setTimeout(flush, 1500 + Math.random() * 1000); renderStatus(); return; }
+    if (mode === "local") { saving = false; saveLocal(); renderStatus(); return; }   // store dropped out while checking
   }
   plan.standards.status = plan.standards.statusField !== "none";
   const paths = [...dirty], full = fullSave || !docExists;
@@ -1173,8 +1175,9 @@ async function flush() {
     else await planRef.update({ plan: buildPatch(plan, paths), ...stamp });
     docExists = true;
     meta = { updatedBy: myId, updatedAt: stamp.updatedAt };
-    if (full) { committed = []; committedAt = null; }   // the whole plan is saved; nothing partial left to keep
-    else { committed = [...new Set([...committed, ...paths])]; committedAt = stamp.updatedAt; }
+    if (full) { committed = []; committedFull = true; }   // the whole plan is saved; keep it whole until its echo
+    else committed = [...new Set([...committed, ...paths])];
+    committedAt = stamp.updatedAt;
   } catch (e) {
     const code = e && e.code;
     if (code === "invalid_argument" && !full) { docExists = false; restore(); saveQueued = true; }   // update needs the doc; it was deleted, so write it whole
@@ -1193,7 +1196,7 @@ function finishConnecting() {
   if (mode === "shared" && (dirty.size || fullSave) && !saveTimer && !saving) saveTimer = setTimeout(flush, 900);
 }
 function applyRemote(d) {
-  if (fullSave || inFlightFull) {
+  if (fullSave || inFlightFull || committedFull) {
     // A whole-plan change (Load example, Clear plan) is still waiting to save, or saving now,
     // and will replace the shared plan anyway, so keep it rather than the teammate's version.
     meta = { updatedBy: d.updatedBy, updatedAt: d.updatedAt };
@@ -1221,7 +1224,7 @@ function onRemote(snap) {
   if (mode === "connecting") finishConnecting();
   const idle = Date.now() - lastLocalEdit > 4000 && !saveTimer && !saving;
   if (d.clientId === clientId) {
-    if (committedAt && d.updatedAt >= committedAt) { committed = []; committedAt = null; }   // our last save is in this snapshot
+    if (committedAt && d.updatedAt >= committedAt) { committed = []; committedFull = false; committedAt = null; }   // our last save is in this snapshot
     // Our own save echoing back. It carries the merged shared plan, so a teammate's change
     // that arrived while we were typing can be shown now that we've stopped.
     if (pendingRemote && idle) { applyRemote(d); return; }

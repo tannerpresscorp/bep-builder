@@ -329,6 +329,7 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
   };
 
   // An edit whose save is still in flight survives "Load their changes".
+  committed = []; committedFull = false; committedAt = null;   // as if earlier saves had echoed back
   plan = normalize(examplePlan()); fullSave = false; dirty.clear(); docExists = true;
   let release; const gate = new Promise(r => release = r);
   planRef = { set: async () => {}, update: async () => { await gate; } };
@@ -340,7 +341,8 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
 
   // A saved edit whose echo hasn't arrived yet survives "Load their changes".
   planRef = { set: async () => {}, update: async () => {} };
-  plan = normalize(examplePlan()); dirty.clear(); fullSave = false; docExists = true; committed = [];
+  plan = normalize(examplePlan()); dirty.clear(); fullSave = false; docExists = true;
+  committed = []; committedFull = false; committedAt = null;
   plan.project.owner = "Just saved"; scheduleSave("project.owner");
   clearTimeout(saveTimer); await flush();
   applyRemote({ plan: remote, updatedBy: "teammate", updatedAt: new Date().toISOString() });
@@ -354,7 +356,24 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
   clearTimeout(saveTimer); await flush();
   const hadCommitted = committed.length > 0;
   scheduleSave(); clearTimeout(saveTimer); await flush();       // e.g. Load example / Clear plan
-  const fullClears = hadCommitted && committed.length === 0 && committedAt === null;
+  const fullClears = hadCommitted && committed.length === 0 && committedFull === true;
+
+  // A whole-plan save whose echo hasn't arrived survives "Load their changes".
+  plan = blankPlan(); scheduleSave(); clearTimeout(saveTimer); await flush();
+  applyRemote({ plan: remote, updatedBy: "teammate", updatedAt: new Date().toISOString() });
+  const fullKeptBeforeEcho = plan.goals[0].goal === "";
+  onRemote({ exists: true, data: () => ({ plan: clone(plan), clientId, updatedAt: committedAt }) });
+  const fullEchoClears = committedFull === false && committedAt === null;
+
+  // The store dropping out during the existence check stops the remote write.
+  let lateWrites = 0;
+  planRef = { get: async () => { goLocal(); return { exists: true }; },
+              set: async () => { lateWrites++; }, update: async () => { lateWrites++; } };
+  mode = "shared"; docExists = null; dirty.clear(); fullSave = false;
+  plan.project.location = "Typed before outage"; scheduleSave("project.location");
+  clearTimeout(saveTimer); await flush();
+  const noLateWrite = lateWrites === 0 && JSON.parse(__stored[LS_KEY]).project.location === "Typed before outage";
+  mode = "shared"; docExists = true;
 
   // A pending whole-plan change (Clear plan) survives "Load their changes".
   plan = blankPlan(); fullSave = true; dirty.clear();
@@ -410,7 +429,7 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
   const staleCleared = latestRemote === null && pendingRemote === false;
   console.log(JSON.stringify({ first, second,
     roots: ["team.1.name", "standards.codes.0.code", "uses.coord.on", "project.name"].map(patchRoot),
-    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared, unknownFirst, connecting, patches, localFallback, committedKept, committedCleared, localDropsStale, fullClears }));
+    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared, unknownFirst, connecting, patches, localFallback, committedKept, committedCleared, localDropsStale, fullClears, fullKeptBeforeEcho, fullEchoClears, noLateWrite }));
 })();
 """)
     if out is None:
@@ -428,6 +447,7 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     assert out["unknownFirst"] == {"gets": 1, "sets": 0, "updates": 1,                # merged, not overwritten
                                    "keptGoal": "Teammate goal", "phase": "Construction"}
     assert out["committedKept"] is True and out["committedCleared"] is True and out["localDropsStale"] is True and out["fullClears"] is True
+    assert out["fullKeptBeforeEcho"] is True and out["fullEchoClears"] is True and out["noLateWrite"] is True
     assert out["localFallback"] == {"remoteCalls": 0, "dirty": 0, "stored": "Edited during outage"}
     assert out["patches"]["name"] == {"project": {"name": ""}}                # no derived status riding along
     assert out["patches"]["statusField"] == {"standards": {"statusField": "status", "status": True}}
