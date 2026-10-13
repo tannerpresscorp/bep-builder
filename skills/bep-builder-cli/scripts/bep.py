@@ -279,6 +279,15 @@ def save(path, plan):
     folder = os.path.dirname(os.path.abspath(path))
     fd, tmp = tempfile.mkstemp(prefix=".bep-", suffix=".json", dir=folder)
     try:
+        # mkstemp creates the file owner-only (0600); keep the plan's existing permissions,
+        # or the normal umask-derived mode for a new plan, so shared plans stay readable.
+        try:
+            mode = os.stat(path).st_mode & 0o7777
+        except FileNotFoundError:
+            umask = os.umask(0)
+            os.umask(umask)
+            mode = 0o666 & ~umask
+        os.chmod(tmp, mode)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(plan, fh, indent=2, ensure_ascii=False)
             fh.write("\n")

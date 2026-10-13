@@ -208,6 +208,10 @@ def test_set_refuses_sections_and_keeps_file_valid():
         assert bep("set", d / "p.json", "team.0.name", "Ana")[0] == 0
         assert json.loads((d / "p.json").read_text())["team"][0]["name"] == "Ana"
         assert [f.name for f in d.iterdir()] == ["p.json"]              # atomic save leaves no temp file
+        if os.name == "posix":
+            os.chmod(d / "p.json", 0o644)
+            assert bep("set", d / "p.json", "project.name", "X")[0] == 0
+            assert (d / "p.json").stat().st_mode & 0o777 == 0o644       # permissions kept
     finally:
         shutil.rmtree(d)
 
@@ -305,13 +309,23 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
   const local = normalize(examplePlan()); local.project.location = "My unsaved edit";
   const merged = overlayEdits(remote, local, ["project.location"]);
 
+  // An edit whose save is still in flight survives "Load their changes".
+  plan = normalize(examplePlan()); fullSave = false; dirty.clear(); docExists = true;
+  let release; const gate = new Promise(r => release = r);
+  planRef = { set: async () => {}, update: async () => { await gate; } };
+  plan.project.location = "Saving now"; scheduleSave("project.location");
+  clearTimeout(saveTimer); const pending = flush();
+  applyRemote({ plan: remote, updatedBy: "teammate", updatedAt: new Date().toISOString() });
+  const inFlightKept = plan.project.location === "Saving now" && plan.goals[0].goal === "Teammate goal";
+  release(); await pending;
+
   // A pending whole-plan change (Clear plan) survives "Load their changes".
   plan = blankPlan(); fullSave = true; dirty.clear();
   applyRemote({ plan: remote, updatedBy: "teammate", updatedAt: new Date().toISOString() });
   const keptCleared = plan.project.name === "" && plan.goals[0].goal === "";
   console.log(JSON.stringify({ first, second,
     roots: ["team.1.name", "standards.codes.0.code", "uses.coord.on", "project.name"].map(patchRoot),
-    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared }));
+    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept }));
 })();
 """)
     if out is None:
@@ -325,7 +339,7 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     assert s["sets"] == 1 and s["owner"] == "Owner X" and s["name"] == "Mine"   # recreated whole
     assert out["roots"] == ["team", "standards.codes", "uses.coord.on", "project.name"]
     assert out["merged"] == {"goal": "Teammate goal", "location": "My unsaved edit"}
-    assert out["keptCleared"] is True
+    assert out["keptCleared"] is True and out["inFlightKept"] is True
 
 
 def test_pages_build_is_a_full_document():

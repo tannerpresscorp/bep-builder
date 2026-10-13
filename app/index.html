@@ -363,6 +363,7 @@ let mode = "connecting"; // connecting | shared | local | readonly
 let db = null, planRef = null, userCap = null, downloads = null, myId = null;
 let lastLocalEdit = 0, saveTimer = null, saving = false, saveQueued = false, pendingRemote = false;
 let dirty = new Set(), fullSave = false, docExists = false, latestRemote = null;
+let inFlight = [], inFlightFull = false;   // what the save now in progress is writing
 let confirmReset = false, confirmExample = false;
 
 /* ---------- Helpers ---------- */
@@ -1115,6 +1116,7 @@ async function flush() {
   plan.standards.status = plan.standards.statusField !== "none";
   const paths = [...dirty], full = fullSave || !docExists;
   dirty.clear(); fullSave = false;
+  inFlight = paths; inFlightFull = full;
   const restore = () => { paths.forEach(x => dirty.add(x)); if (full) fullSave = true; };
   const stamp = { updatedBy: myId, updatedAt: new Date().toISOString(), clientId };
   try {
@@ -1130,20 +1132,21 @@ async function flush() {
     else if (code === "unavailable") { restore(); saveTimer = setTimeout(flush, 1500 + Math.random() * 1000); }
     else { mode = "local"; try { localStorage.setItem(LS_KEY, JSON.stringify(plan)); } catch (x) {} renderAll(); }
   }
-  saving = false;
+  saving = false; inFlight = []; inFlightFull = false;
   if (saveQueued) { saveQueued = false; await flush(); }
   renderStatus();
 }
 function applyRemote(d) {
-  if (fullSave) {
-    // A whole-plan change (Load example, Clear plan) is still waiting to save and will
-    // replace the shared plan anyway, so keep it rather than the teammate's version.
+  if (fullSave || inFlightFull) {
+    // A whole-plan change (Load example, Clear plan) is still waiting to save, or saving now,
+    // and will replace the shared plan anyway, so keep it rather than the teammate's version.
     meta = { updatedBy: d.updatedBy, updatedAt: d.updatedAt };
     pendingRemote = false;
     renderAll();
     return;
   }
-  plan = normalize(overlayEdits(normalize(d.plan), plan, [...dirty]));
+  // Keep edits not yet saved and edits whose save is still in progress.
+  plan = normalize(overlayEdits(normalize(d.plan), plan, [...dirty, ...inFlight]));
   meta = { updatedBy: d.updatedBy, updatedAt: d.updatedAt };
   pendingRemote = false;
   renderAll();
