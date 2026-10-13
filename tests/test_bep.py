@@ -82,6 +82,29 @@ def test_process_map_example():
     assert 'stub_construction -->|"COBie handover · LOD 500 data · Closeout"| u_cobie' in out
 
 
+def test_examples_in_sync():
+    """examples/example-plan.json, 'bep init --example' and the app's example are the same plan."""
+    sys.path.insert(0, str(CLI))
+    import bep as cli
+    ref = cli.normalize(json.loads((ROOT / "examples/example-plan.json").read_text()))
+    assert cli.normalize(cli.example_plan()) == ref
+    assert not cli.collect_todos(cli.build_doc(ref))
+    node = shutil.which("node")
+    if not node:
+        print("  (skipped app check: Node.js not installed)")
+        return
+    html = (ROOT / "app/index.html").read_text()
+    js = html.split("<script>")[1].split("</script>")[0].split("/* ---------- Events ---------- */")[0]
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as fh:
+        fh.write(js + "\nconsole.log(JSON.stringify(normalize(examplePlan())));\n")
+    try:
+        r = subprocess.run([node, fh.name], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+    finally:
+        os.unlink(fh.name)
+    assert cli.normalize(json.loads(r.stdout)) == ref
+
+
 def test_maps_workbook_round_trip():
     try:
         from openpyxl import load_workbook
