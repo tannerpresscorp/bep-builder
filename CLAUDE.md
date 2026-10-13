@@ -10,6 +10,8 @@ Tools for writing a BIM Execution Plan (BEP) under the U.S. National CAD Standar
 - `skills/bep-builder-cli/scripts/bep.py`: the command-line tool. It uses only the Python 3.8+ standard library; only `maps-workbook` needs `openpyxl`.
 - `skills/*/`: Claude skills. Each has a `SKILL.md`, its `scripts/`, `references/` and `evals/evals.json`.
 
+For a longer walkthrough (tutorial, architecture, how-to guides, reference), see `docs/onboarding/`.
+
 ## Commands
 
 ```bash
