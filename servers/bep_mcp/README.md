@@ -19,7 +19,7 @@ Without installing, you can also run `python -m bep_mcp` with `PYTHONPATH=server
 
 ## Tools
 
-The server currently provides these read-only tools. Write tools come in the next step of the [delivery plan](../../docs/design/mcp-server.md#6-delivery-plan).
+**Read-only:**
 
 | Tool | What it returns |
 |---|---|
@@ -33,6 +33,20 @@ The server currently provides these read-only tools. Write tools come in the nex
 | `bep_get_process_map` | The Level 1 process map, as Mermaid or a tldraw script |
 | `bep_export_plan` | The finished plan, as Markdown or HTML |
 | `bep_get_layer_definition` | The ISO 13567-3 layer naming definition file |
+
+**Write.** Each one writes exactly what the matching CLI command would, and returns the plan's new status. Tools marked *destructive* can discard data, so clients can ask before running them.
+
+| Tool | Does | CLI equivalent |
+|---|---|---|
+| `bep_create_plan` *(destructive with `overwrite`)* | Create a blank or example plan | `init` |
+| `bep_set_value` | Set one value by dotted path | `set` |
+| `bep_add_row` | Add a row to a list | `add` |
+| `bep_remove_row` *(destructive)* | Remove a row by index | `remove` |
+| `bep_set_bim_use` | Turn a BIM use on or off and fill in its details | `use` |
+| `bep_set_qc` | Configure a QC check or model rule | `qc` |
+| `bep_save_document` *(destructive: replaces a file of the same name)* | Write the plan (Markdown or HTML) or the layer definition into the plans folder | `export -o`, `definition -o` |
+
+Writes run one at a time under a lock, so overlapping requests can't overwrite each other's edits. Saves are atomic, as in the CLI.
 
 Data tools return JSON, both as text and as `structuredContent`. Document tools (map, export, definition) return plain text. A failure returns an error result carrying the CLI's own message, so the model can correct its input.
 
