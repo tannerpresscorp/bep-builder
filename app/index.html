@@ -373,7 +373,11 @@ function input(path, label, opts = {}) {
   const ph = opts.ph ? ` placeholder="${esc(opts.ph)}"` : "";
   let ctl;
   if (opts.type === "textarea") ctl = `<textarea id="${id}" data-path="${path}"${ph}${dis()}>${esc(val)}</textarea>`;
-  else if (opts.options) ctl = `<select id="${id}" data-path="${path}"${dis()}>${opts.options.map(([v, l]) => `<option value="${esc(v)}"${v === val ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+  else if (opts.options) {
+    // Keep a value set elsewhere (CLI, maps workbook) visible even when it isn't one of the choices.
+    const options = filled(val) && !opts.options.some(([v]) => v === val) ? [...opts.options, [val, val]] : opts.options;
+    ctl = `<select id="${id}" data-path="${path}"${dis()}>${options.map(([v, l]) => `<option value="${esc(v)}"${v === val ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+  }
   else ctl = `<input id="${id}" type="${opts.type || "text"}" data-path="${path}" value="${esc(val)}"${ph}${dis()}>`;
   if (!label) return ctl;
   return `<div class="field"><label for="${id}">${esc(label)}</label>${ctl}${opts.hint ? `<p class="hint">${opts.hint}</p>` : ""}</div>`;

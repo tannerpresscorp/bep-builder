@@ -261,9 +261,14 @@ def get_path(plan, path):
 def set_path(plan, path, raw):
     obj, last = _walk(plan, path)
     key = int(last) if isinstance(obj, list) else last
-    current = obj[key] if (isinstance(obj, list) or key in obj) else None
+    if isinstance(obj, dict) and key not in obj:
+        raise ValueError(f"'{last}' isn't a field here. Fields: {', '.join(obj)}")
+    current = obj[key]
     if isinstance(current, bool):
-        value = raw.strip().lower() in ("1", "true", "yes", "y", "on")
+        word = raw.strip().lower()
+        if word not in ("1", "true", "yes", "y", "on", "0", "false", "no", "n", "off"):
+            raise ValueError(f"expected yes or no, got '{raw}'")
+        value = word in ("1", "true", "yes", "y", "on")
     else:
         value = raw
     if path == "project.agency" and value not in AGENCIES:
@@ -706,7 +711,10 @@ def cmd_catalog(a):
 
 def cmd_show(a):
     plan = load(a.plan)
-    value = get_path(plan, a.path) if a.path else plan
+    try:
+        value = get_path(plan, a.path) if a.path else plan
+    except (KeyError, IndexError, ValueError, TypeError):
+        sys.exit(f"{a.path} isn't in this plan. Run 'show {a.plan}' to see its fields.")
     print(json.dumps(value, indent=2, ensure_ascii=False) if isinstance(value, (dict, list)) else value)
 
 
@@ -751,8 +759,12 @@ def cmd_add(a):
 
 def cmd_remove(a):
     plan = load(a.plan)
+    if a.list not in ROW_TEMPLATES:
+        sys.exit(f"Unknown list '{a.list}'. Lists: {', '.join(ROW_TEMPLATES)}")
     lst = get_path(plan, a.list)
     try:
+        if a.index < 0:
+            raise IndexError
         removed = lst.pop(a.index)
     except IndexError:
         sys.exit(f"{a.list} has {len(lst)} rows; index {a.index} doesn't exist")
@@ -779,6 +791,8 @@ def cmd_use(a):
 def cmd_qc(a):
     plan = load(a.plan)
     if a.rule_id in plan["checks"]:
+        if a.off:
+            sys.exit(f"Checks can't be turned off; '{a.rule_id}' always appears in section 10.")
         c = plan["checks"][a.rule_id]
         for k in ("tool", "who", "freq"):
             v = getattr(a, k)
@@ -786,6 +800,8 @@ def cmd_qc(a):
                 c[k] = v
         out = c
     elif a.rule_id in plan["qc"]:
+        if a.tool is not None:
+            sys.exit("--tool applies to checks (visual, clash, standards, integrity), not model rules.")
         r = plan["qc"][a.rule_id]
         r["on"] = not a.off
         for k in ("who", "freq"):
