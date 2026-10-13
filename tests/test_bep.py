@@ -320,6 +320,11 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
   const local = normalize(examplePlan()); local.project.location = "My unsaved edit";
   const merged = overlayEdits(remote, local, ["project.location"]);
 
+  const patches = {
+    name: buildPatch(normalize(blankPlan()), ["project.name"]),
+    statusField: buildPatch(normalize(blankPlan()), ["standards.statusField"])
+  };
+
   // An edit whose save is still in flight survives "Load their changes".
   plan = normalize(examplePlan()); fullSave = false; dirty.clear(); docExists = true;
   let release; const gate = new Promise(r => release = r);
@@ -367,7 +372,7 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
   const staleCleared = latestRemote === null && pendingRemote === false;
   console.log(JSON.stringify({ first, second,
     roots: ["team.1.name", "standards.codes.0.code", "uses.coord.on", "project.name"].map(patchRoot),
-    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared, unknownFirst, connecting }));
+    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared, unknownFirst, connecting, patches }));
 })();
 """)
     if out is None:
@@ -384,6 +389,8 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     assert out["keptCleared"] is True and out["inFlightKept"] is True and out["staleCleared"] is True
     assert out["unknownFirst"] == {"gets": 1, "sets": 0, "updates": 1,                # merged, not overwritten
                                    "keptGoal": "Teammate goal", "phase": "Construction"}
+    assert out["patches"]["name"] == {"project": {"name": ""}}                # no derived status riding along
+    assert out["patches"]["statusField"] == {"standards": {"statusField": "status", "status": True}}
     assert out["connecting"] == {"queuedWhileConnecting": False, "scheduledOnConnect": True, "updates": 1,
                                  "owner": "Typed while connecting", "keptGoal": "Teammate goal"}
 

@@ -1091,7 +1091,10 @@ function setPathCreate(obj, path, val) {
 }
 function buildPatch(p, paths) {
   const out = {};
-  [...paths, "standards.status"].forEach(path => setPathCreate(out, path, clone(getPath(p, path))));
+  // standards.status is derived from standards.statusField; send it only with that field,
+  // so an unrelated edit from a browser that hasn't caught up can't reset a teammate's choice.
+  const all = paths.includes("standards.statusField") ? [...paths, "standards.status"] : paths;
+  all.forEach(path => setPathCreate(out, path, clone(getPath(p, path))));
   return out;
 }
 // The latest shared plan with this browser's not-yet-saved edits laid back on top.
