@@ -1173,7 +1173,8 @@ async function flush() {
     else await planRef.update({ plan: buildPatch(plan, paths), ...stamp });
     docExists = true;
     meta = { updatedBy: myId, updatedAt: stamp.updatedAt };
-    if (!full) { committed = [...new Set([...committed, ...paths])]; committedAt = stamp.updatedAt; }
+    if (full) { committed = []; committedAt = null; }   // the whole plan is saved; nothing partial left to keep
+    else { committed = [...new Set([...committed, ...paths])]; committedAt = stamp.updatedAt; }
   } catch (e) {
     const code = e && e.code;
     if (code === "invalid_argument" && !full) { docExists = false; restore(); saveQueued = true; }   // update needs the doc; it was deleted, so write it whole
@@ -1220,7 +1221,7 @@ function onRemote(snap) {
   if (mode === "connecting") finishConnecting();
   const idle = Date.now() - lastLocalEdit > 4000 && !saveTimer && !saving;
   if (d.clientId === clientId) {
-    if (d.updatedAt === committedAt) { committed = []; committedAt = null; }   // our last save is in this snapshot
+    if (committedAt && d.updatedAt >= committedAt) { committed = []; committedAt = null; }   // our last save is in this snapshot
     // Our own save echoing back. It carries the merged shared plan, so a teammate's change
     // that arrived while we were typing can be shown now that we've stopped.
     if (pendingRemote && idle) { applyRemote(d); return; }

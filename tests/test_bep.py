@@ -349,6 +349,13 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
   onRemote({ exists: true, data: () => ({ plan: echoPlan, clientId, updatedAt: committedAt }) });
   const committedCleared = committed.length === 0;
 
+  // A whole-plan save clears fields kept from an earlier partial save.
+  plan.project.owner = "Partial"; scheduleSave("project.owner");
+  clearTimeout(saveTimer); await flush();
+  const hadCommitted = committed.length > 0;
+  scheduleSave(); clearTimeout(saveTimer); await flush();       // e.g. Load example / Clear plan
+  const fullClears = hadCommitted && committed.length === 0 && committedAt === null;
+
   // A pending whole-plan change (Clear plan) survives "Load their changes".
   plan = blankPlan(); fullSave = true; dirty.clear();
   applyRemote({ plan: remote, updatedBy: "teammate", updatedAt: new Date().toISOString() });
@@ -403,7 +410,7 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
   const staleCleared = latestRemote === null && pendingRemote === false;
   console.log(JSON.stringify({ first, second,
     roots: ["team.1.name", "standards.codes.0.code", "uses.coord.on", "project.name"].map(patchRoot),
-    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared, unknownFirst, connecting, patches, localFallback, committedKept, committedCleared, localDropsStale }));
+    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared, unknownFirst, connecting, patches, localFallback, committedKept, committedCleared, localDropsStale, fullClears }));
 })();
 """)
     if out is None:
@@ -420,7 +427,7 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     assert out["keptCleared"] is True and out["inFlightKept"] is True and out["staleCleared"] is True
     assert out["unknownFirst"] == {"gets": 1, "sets": 0, "updates": 1,                # merged, not overwritten
                                    "keptGoal": "Teammate goal", "phase": "Construction"}
-    assert out["committedKept"] is True and out["committedCleared"] is True and out["localDropsStale"] is True
+    assert out["committedKept"] is True and out["committedCleared"] is True and out["localDropsStale"] is True and out["fullClears"] is True
     assert out["localFallback"] == {"remoteCalls": 0, "dirty": 0, "stored": "Edited during outage"}
     assert out["patches"]["name"] == {"project": {"name": ""}}                # no derived status riding along
     assert out["patches"]["statusField"] == {"standards": {"statusField": "status", "status": True}}
