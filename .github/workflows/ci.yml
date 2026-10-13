@@ -18,7 +18,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - run: pip install openpyxl defusedxml
+      - run: pip install openpyxl defusedxml "mcp>=2,<3"
       - run: python tests/test_bep.py
+      - name: MCP server tests
+        run: python tests/test_mcp.py
       - name: Example plan exports
         run: python skills/bep-builder-cli/scripts/bep.py export examples/example-plan.json -o "${{ runner.temp }}/example.md"

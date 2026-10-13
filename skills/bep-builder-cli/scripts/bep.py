@@ -836,6 +836,33 @@ def check_names(names, plan=None):
             "results": results}
 
 
+def convert_layers(plan, names, anno_element=None):
+    """Suggest ISO 13567 names for existing layers under the plan's profile.
+
+    Returns {"profile", "anno_element", "sheet_code",
+             "results": [{"name", "suggested": name or None, "notes": [...]}]}.
+    A suggestion of None means a person has to decide (e.g. which element an ANNO layer belongs to).
+    """
+    prof = profile_for(plan)
+    elem = anno_element.upper() if anno_element else None
+    sheet = plan["standards"].get("sheetCode") or None
+    results = []
+    for n in names:
+        new, notes = iso13567.convert(n, prof, elem, sheet)
+        results.append({"name": n, "suggested": new, "notes": notes})
+    return {"profile": prof.describe(), "anno_element": elem, "sheet_code": sheet, "results": results}
+
+
+def layer_definition(plan):
+    """The ISO 13567-3 layer naming system definition file, with the plan's user-defined codes."""
+    text = iso13567.definition_file(profile_for(plan), plan["project"]["name"] or "Project")
+    codes = disclosure_codes(plan)
+    if codes:
+        text += "\n# User-defined codes (also on the NCS Compliance Disclosure Statement)\nCode\tMeaning\n"
+        text += "".join(f"{c['code']}\t{c.get('meaning', '')}\n" for c in codes)
+    return text
+
+
 # ---------------------------------------------------------------- commands
 def cmd_init(a):
     if os.path.exists(a.plan) and not a.force:
@@ -994,28 +1021,20 @@ def cmd_check_names(a):
 
 def cmd_convert(a):
     plan = load(a.plan)
-    prof = profile_for(plan)
+    res = convert_layers(plan, a.names, a.anno_element)
     if not plan["standards"]["iso13567"]:
         print("Note: ISO 13567 isn't turned on in this plan (standards.iso13567); converting with its "
               "settings anyway.\n")
-    print(f"Profile: {prof.describe()}\n")
+    print(f"Profile: {res['profile']}\n")
     print("| Original | Suggested | Notes |\n|---|---|---|")
-    elem = a.anno_element.upper() if a.anno_element else None
-    sheet = plan["standards"].get("sheetCode") or None
-    if sheet and not elem:
-        print(f"Sheet-level annotation (title blocks, general notes…) moves to {sheet}; other ANNO layers need their element.\n")
-    for n in a.names:
-        new, notes = iso13567.convert(n, prof, elem, sheet)
-        print(f"| {n} | {new or '— needs a decision'} | {'; '.join(notes) or '—'} |")
+    if res["sheet_code"] and not res["anno_element"]:
+        print(f"Sheet-level annotation (title blocks, general notes…) moves to {res['sheet_code']}; other ANNO layers need their element.\n")
+    for r in res["results"]:
+        print(f"| {r['name']} | {r['suggested'] or '— needs a decision'} | {'; '.join(r['notes']) or '—'} |")
 
 
 def cmd_definition(a):
-    plan = load(a.plan)
-    text = iso13567.definition_file(profile_for(plan), plan["project"]["name"] or "Project")
-    codes = disclosure_codes(plan)
-    if codes:
-        text += "\n# User-defined codes (also on the NCS Compliance Disclosure Statement)\nCode\tMeaning\n"
-        text += "".join(f"{c['code']}\t{c.get('meaning', '')}\n" for c in codes)
+    text = layer_definition(load(a.plan))
     if a.output:
         with open(a.output, "w", encoding="utf-8") as fh:
             fh.write(text)
