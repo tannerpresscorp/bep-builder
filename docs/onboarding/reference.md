@@ -178,7 +178,7 @@ Identical file copies between skills: `iso13567.py` (bep-builder-cli and nationa
 
 Tests that need Node or openpyxl print `(skipped: ...)` and **pass** when the tool is missing. CI has both, so run them locally with both before pushing.
 
-`python tests/test_mcp.py` runs the MCP server's 9 tests. They need Python 3.10+ and `pip install "mcp>=2,<3"`, and print `skipped` without the SDK.
+`python tests/test_mcp.py` runs the MCP server's 11 tests. They need Python 3.10+ and `pip install "mcp>=2,<3"`, and print `skipped` without the SDK.
 
 | Test | Guards |
 |---|---|
@@ -190,6 +190,8 @@ Tests that need Node or openpyxl print `(skipped: ...)` and **pass** when the to
 | `test_save_document_matches_the_cli` | `bep_save_document` writes the same files as `export -o` and `definition -o`. |
 | `test_concurrent_writes_are_not_lost` | Twenty simultaneous `bep_add_row` calls keep all twenty rows. |
 | `test_eval_answers_match_the_fixtures` | Each answer in `servers/bep_mcp/evals/evals.xml` still matches what the tools return for the fixture plans. |
+| `test_resources_match_the_tools` | `bep://catalog` and `bep://plans/{plan}` return the same data as `bep_get_catalog` and `bep_get_plan`, and refuse missing or escaping names. |
+| `test_start_bep_prompt` | `start_bep` starts or resumes a plan, rejects bad names and agencies, and only names tools, list fields and plan keys that exist. |
 | `test_server_needs_a_plans_folder` | The server refuses to start without a valid `BEP_PLANS_DIR`. |
 
 ## MCP server
@@ -220,6 +222,8 @@ Install with `python -m pip install -e servers/bep_mcp` (editable, from inside t
 | `bep_set_bim_use` | `use` | write |
 | `bep_set_qc` | `qc` | write |
 | `bep_save_document` | `export -o`, `definition -o` | destructive (replaces a file of the same name) |
+
+It also offers two resources, `bep://catalog` and `bep://plans/{plan}`, and the `start_bep` prompt, which walks the model through a new plan section by section (see the server's README).
 
 The server logs one line per tool call to stderr; stdout carries the protocol.
 

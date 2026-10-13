@@ -28,7 +28,7 @@ python tests/test_bep.py
 python tests/test_mcp.py
 ```
 
-You should see 15 `PASS` lines, then 9 more, and no `skipped`. In a Codespace or dev container, all of this is already installed.
+You should see 15 `PASS` lines, then 11 more, and no `skipped`. In a Codespace or dev container, all of this is already installed.
 
 ## Run one test
 
@@ -152,7 +152,7 @@ mkdir -p ~/plans
 claude mcp add bep -e BEP_PLANS_DIR="$HOME/plans" -- bep_mcp
 ```
 
-Then, in Claude Code, ask for something like "create an example plan called demo.json and list its TODOs". The server logs one line per tool call to stderr.
+Then, in Claude Code, ask for something like "create an example plan called demo.json and list its TODOs", or run `/mcp__bep__start_bep` to be interviewed for a new plan. The server logs one line per tool call to stderr.
 
 ## Add or change an MCP tool
 

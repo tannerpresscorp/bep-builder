@@ -7,6 +7,7 @@ Plans are JSON files in one folder, BEP_PLANS_DIR. Tools name a plan by file nam
 ("clinic.json"), never by path, and can't reach anything outside that folder.
 """
 import functools
+import json
 import logging
 import os
 import re
@@ -16,8 +17,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 from mcp.server.mcpserver import MCPServer
-from mcp.server.mcpserver.exceptions import ToolError
-from mcp.types import ToolAnnotations
+from mcp.server.mcpserver.exceptions import ResourceError, ToolError
+from mcp.shared.exceptions import MCPError
+from mcp.types import INVALID_PARAMS, ToolAnnotations
 
 
 def _cli_dir():
@@ -119,6 +121,22 @@ def _status(plan):
             "todo_count": len(todos)}
 
 
+def _catalog():
+    """Every id the tools accept (bep_get_catalog and the bep://catalog resource)."""
+    return {
+        "bim_uses": [{"id": u, "name": n, "phase": ph} for u, n, ph in bep.USES],
+        "agencies": bep.AGENCIES,
+        "status_fields": bep.STATUS_FIELDS,
+        "layer_formats": bep.LAYER_FORMATS,
+        "sheet_levels": bep.SHEET_LEVELS,
+        "qc_model_rules": {**{f"a{i}": r for i, r in enumerate(bep.QC_AUTHOR)},
+                           **{f"d{i}": r for i, r in enumerate(bep.QC_DELIVER)}},
+        "qc_checks": {cid: {"name": n, "purpose": p} for cid, n, p in bep.QC_CHECKS},
+        "lists": {k: list(v) for k, v in bep.ROW_TEMPLATES.items()},
+        "sections": [{"code": c, "id": i, "title": t} for c, i, t in bep.SECTIONS],
+    }
+
+
 def create_server(plans_dir):
     """Build the server for one plans folder. main() calls this; tests call it directly."""
     if not Path(plans_dir).is_dir():
@@ -129,7 +147,9 @@ def create_server(plans_dir):
             "Tools for BIM Execution Plans (BEPs) under the U.S. National CAD Standard. Plans are "
             "JSON files named like 'clinic.json'; start with bep_list_plans. Call bep_get_catalog "
             "for the ids other tools accept. bep_get_status and bep_list_todos show what a plan "
-            "still needs. Never invent project facts; leave unknowns as TODOs."),
+            "still needs. Never invent project facts; leave unknowns as TODOs. The start_bep "
+            "prompt walks through a new plan; resources bep://catalog and bep://plans/{plan} "
+            "give the same data as bep_get_catalog and bep_get_plan."),
     )
 
     @server.tool(annotations=READ, structured_output=True)
@@ -156,18 +176,7 @@ def create_server(plans_dir):
     def bep_get_catalog() -> dict[str, Any]:
         """Every id the other tools accept: BIM uses, agencies, status fields, ISO 13567 layer
         formats, sheet levels, QC model rules and checks, and the editable lists with their fields."""
-        return {
-            "bim_uses": [{"id": u, "name": n, "phase": ph} for u, n, ph in bep.USES],
-            "agencies": bep.AGENCIES,
-            "status_fields": bep.STATUS_FIELDS,
-            "layer_formats": bep.LAYER_FORMATS,
-            "sheet_levels": bep.SHEET_LEVELS,
-            "qc_model_rules": {**{f"a{i}": r for i, r in enumerate(bep.QC_AUTHOR)},
-                               **{f"d{i}": r for i, r in enumerate(bep.QC_DELIVER)}},
-            "qc_checks": {cid: {"name": n, "purpose": p} for cid, n, p in bep.QC_CHECKS},
-            "lists": {k: list(v) for k, v in bep.ROW_TEMPLATES.items()},
-            "sections": [{"code": c, "id": i, "title": t} for c, i, t in bep.SECTIONS],
-        }
+        return _catalog()
 
     @server.tool(annotations=READ, structured_output=True)
     @_logged
@@ -377,7 +386,70 @@ def create_server(plans_dir):
         return {"plan": plan, "document": document, "file": file_name, "bytes": len(text.encode("utf-8")),
                 "todo_count": len(bep.collect_todos(bep.build_doc(p)))}
 
+    @server.resource("bep://catalog", name="catalog", title="BEP catalog",
+                     description="Every id the tools accept (same as bep_get_catalog).",
+                     mime_type="application/json")
+    def catalog_resource() -> str:
+        return json.dumps(_catalog(), indent=2, ensure_ascii=False)
+
+    @server.resource("bep://plans/{plan}", name="plan", title="BEP plan",
+                     description="One plan file from the plans folder, normalized, as JSON "
+                                 "(same as bep_get_plan without a path). Read-only.",
+                     mime_type="application/json")
+    def plan_resource(plan: str) -> str:
+        try:
+            p = _load(plans_dir, plan)
+        except ToolError as e:
+            raise ResourceError(str(e)) from None
+        return json.dumps(p, indent=2, ensure_ascii=False)
+
+    @server.prompt(name="start_bep", title="Start a BIM Execution Plan",
+                   description="Interview the user section by section and fill a plan with the "
+                               "bep tools, leaving anything unknown as a TODO.")
+    def start_bep(plan: str = "plan.json", agency: str = "") -> str:
+        # The SDK turns other exceptions from a prompt into "Internal server error"; MCPError keeps the message.
+        try:
+            resolve_plan(plans_dir, plan, must_exist=False)   # same name rules as the tools
+        except ToolError as e:
+            raise MCPError(code=INVALID_PARAMS, message=str(e)) from None
+        if agency and agency not in bep.AGENCIES:
+            raise MCPError(code=INVALID_PARAMS,
+                           message=f"Unknown agency '{agency}'. Use one of: {', '.join(bep.AGENCIES)}.")
+        return start_bep_text(plan, agency, (Path(plans_dir) / plan).is_file())
+
     return server
+
+
+def start_bep_text(plan, agency, exists):
+    """The start_bep prompt: the bep-builder-cli skill's workflow, written for the MCP tools."""
+    if exists:
+        first = (f"1. {plan} already exists. Call bep_get_status and bep_list_todos on it, tell me "
+                 "where it stands, and carry on from the first section that isn't done.")
+    else:
+        a = f', agency "{agency}"' if agency else ""
+        first = (f"1. Create {plan} with bep_create_plan (blank, not the example{a}). "
+                 + ("" if agency else "Ask me who the owner is first if it decides the agency "
+                    "(USACE, GSA, VA, other federal, state or private)."))
+    return f"""Help me write a BIM Execution Plan (BEP) in {plan}, using the bep tools.
+
+{first}
+2. Call bep_get_catalog once, so you use real ids for BIM uses, agencies, QC checks and model rules.
+3. Interview me one section at a time, in plan order, and save each answer as soon as I give it:
+   - 01 Project: bep_set_value on project.name, owner, location, delivery, phase, start (YYYY-MM-DD), agency, cui (yes/no), iso. For USACE or other DoD work, ask the CUI question early.
+   - 02 Team: bep_add_row on team (role, org, name, email).
+   - 03 Goals: bep_add_row on goals (goal, uses), highest priority first.
+   - 04-05 BIM uses: bep_set_bim_use with the responsible party, the value to the project and the process flow.
+   - 06 Exchanges: bep_add_row on exchanges (what, from, to, content, lod, due); bep_set_value cobie for COBie.
+   - 07 Collaboration: bep_set_value on collab.cde, sharing, meetings, coords, naming, changes.
+   - 08 Technology: bep_add_row on tech (discipline, software, version, formats).
+   - 09 Standards: bep_set_value on standards.* (NCS version, sheet level, status field, ISO 13567, layer format, plotting). Check any layer or sheet names I give you with bep_check_names.
+   - 10 Quality control: bep_set_qc for the visual, clash, standards and integrity checks (tool, who, freq) and the model rules.
+   - 11 Deliverables: bep_add_row on deliver (item, format, due).
+4. Never invent names, firms, dates or numbers. Anything I haven't told you stays empty, so it shows as a TODO.
+5. After each section, show progress with bep_get_status. When we reach the end, go through bep_list_todos with me, grouped by section, in plain words.
+6. Once BIM uses are chosen, show the Level 1 process map with bep_get_process_map.
+7. At the end, offer to save the plan with bep_save_document (plan_md or plan_html) and say how many TODOs remain.
+"""
 
 
 def main():
