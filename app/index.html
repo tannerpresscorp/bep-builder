@@ -366,6 +366,7 @@ let lastLocalEdit = 0, saveTimer = null, saving = false, saveQueued = false, pen
 // docExists: null until the first snapshot (or a read) says whether the shared plan exists.
 let dirty = new Set(), fullSave = false, docExists = null, latestRemote = null;
 let inFlight = [], inFlightFull = false;   // what the save now in progress is writing
+let committed = [], committedAt = null;    // what the last save wrote, until its echo arrives
 let confirmReset = false, confirmExample = false;
 
 /* ---------- Helpers ---------- */
@@ -1141,6 +1142,7 @@ async function flush() {
     else await planRef.update({ plan: buildPatch(plan, paths), ...stamp });
     docExists = true;
     meta = { updatedBy: myId, updatedAt: stamp.updatedAt };
+    if (!full) { committed = [...new Set([...committed, ...paths])]; committedAt = stamp.updatedAt; }
   } catch (e) {
     const code = e && e.code;
     if (code === "invalid_argument" && !full) { docExists = false; restore(); saveQueued = true; }   // update needs the doc; it was deleted, so write it whole
@@ -1167,8 +1169,8 @@ function applyRemote(d) {
     renderAll();
     return;
   }
-  // Keep edits not yet saved and edits whose save is still in progress.
-  plan = normalize(overlayEdits(normalize(d.plan), plan, [...dirty, ...inFlight]));
+  // Keep edits not yet saved, edits being saved, and saved edits whose echo hasn't arrived.
+  plan = normalize(overlayEdits(normalize(d.plan), plan, [...dirty, ...inFlight, ...committed]));
   meta = { updatedBy: d.updatedBy, updatedAt: d.updatedAt };
   pendingRemote = false;
   renderAll();
@@ -1187,6 +1189,7 @@ function onRemote(snap) {
   if (mode === "connecting") finishConnecting();
   const idle = Date.now() - lastLocalEdit > 4000 && !saveTimer && !saving;
   if (d.clientId === clientId) {
+    if (d.updatedAt === committedAt) { committed = []; committedAt = null; }   // our last save is in this snapshot
     // Our own save echoing back. It carries the merged shared plan, so a teammate's change
     // that arrived while we were typing can be shown now that we've stopped.
     if (pendingRemote && idle) { applyRemote(d); return; }

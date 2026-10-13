@@ -338,6 +338,17 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
   const inFlightKept = plan.project.location === "Saving now" && plan.goals[0].goal === "Teammate goal";
   release(); await pending;
 
+  // A saved edit whose echo hasn't arrived yet survives "Load their changes".
+  planRef = { set: async () => {}, update: async () => {} };
+  plan = normalize(examplePlan()); dirty.clear(); fullSave = false; docExists = true; committed = [];
+  plan.project.owner = "Just saved"; scheduleSave("project.owner");
+  clearTimeout(saveTimer); await flush();
+  applyRemote({ plan: remote, updatedBy: "teammate", updatedAt: new Date().toISOString() });
+  const committedKept = plan.project.owner === "Just saved" && plan.goals[0].goal === "Teammate goal";
+  const echoPlan = clone(plan);
+  onRemote({ exists: true, data: () => ({ plan: echoPlan, clientId, updatedAt: committedAt }) });
+  const committedCleared = committed.length === 0;
+
   // A pending whole-plan change (Clear plan) survives "Load their changes".
   plan = blankPlan(); fullSave = true; dirty.clear();
   applyRemote({ plan: remote, updatedBy: "teammate", updatedAt: new Date().toISOString() });
@@ -386,7 +397,7 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
   const staleCleared = latestRemote === null && pendingRemote === false;
   console.log(JSON.stringify({ first, second,
     roots: ["team.1.name", "standards.codes.0.code", "uses.coord.on", "project.name"].map(patchRoot),
-    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared, unknownFirst, connecting, patches, localFallback }));
+    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared, unknownFirst, connecting, patches, localFallback, committedKept, committedCleared }));
 })();
 """)
     if out is None:
@@ -403,6 +414,7 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     assert out["keptCleared"] is True and out["inFlightKept"] is True and out["staleCleared"] is True
     assert out["unknownFirst"] == {"gets": 1, "sets": 0, "updates": 1,                # merged, not overwritten
                                    "keptGoal": "Teammate goal", "phase": "Construction"}
+    assert out["committedKept"] is True and out["committedCleared"] is True
     assert out["localFallback"] == {"remoteCalls": 0, "dirty": 0, "stored": "Edited during outage"}
     assert out["patches"]["name"] == {"project": {"name": ""}}                # no derived status riding along
     assert out["patches"]["statusField"] == {"standards": {"statusField": "status", "status": True}}
