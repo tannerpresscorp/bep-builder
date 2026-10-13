@@ -17,6 +17,8 @@ The web app is published to GitHub Pages at
 `app/` or `tools/build_pages.py` (`.github/workflows/pages.yml`). The workflow runs `tools/build_pages.py` to wrap the
 artifact page in a full HTML document (doctype, charset, language, viewport) for Pages.
 
+New to the code? Start with the [onboarding guide](docs/onboarding/README.md).
+
 ## Quick start (CLI)
 
 ```bash
