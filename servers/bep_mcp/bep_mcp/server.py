@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import sys
+import threading
 from pathlib import Path
 from typing import Any, Literal
 
@@ -39,6 +40,13 @@ log = logging.getLogger("bep_mcp")
 PLAN_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._ -]{0,100}\.json")
 READ = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True,
                        open_world_hint=False)
+EDIT = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True,
+                       open_world_hint=False)
+DESTRUCTIVE = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=False,
+                              open_world_hint=False)
+DOCUMENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._ -]{0,100}\.(md|html|txt)")
+# One lock for every load -> change -> save, so overlapping requests can't lose each other's edits.
+WRITE_LOCK = threading.Lock()
 SECTION_TITLES = {code: title for code, _, title in bep.SECTIONS}
 
 
@@ -80,6 +88,27 @@ def _load(plans_dir, name):
         return bep.load(path)
     except ValueError as e:   # json.JSONDecodeError is a ValueError
         raise ToolError(f"'{name}' isn't a readable plan file: {e}") from e
+
+
+def _save(path, plan):
+    try:
+        bep.save(path, plan)
+    except PermissionError as e:
+        raise ToolError(f"Can't save '{path.name}': it is read-only.") from e
+
+
+def _edit(plans_dir, name, change):
+    """Load the plan, apply change(plan) under the write lock, save it, and return
+    (change's result, the plan's new status). bep.py's ValueErrors become tool errors."""
+    with WRITE_LOCK:
+        path = resolve_plan(plans_dir, name)
+        plan = _load(plans_dir, name)
+        try:
+            result = change(plan)
+        except ValueError as e:
+            raise ToolError(str(e)) from e
+        _save(path, plan)
+    return result, _status(plan)
 
 
 def _status(plan):
@@ -226,6 +255,121 @@ def create_server(plans_dir):
         """The ISO 13567-3 layer naming system definition file for the plan, including its
         user-defined codes."""
         return bep.layer_definition(_load(plans_dir, plan))
+
+    @server.tool(annotations=DESTRUCTIVE, structured_output=True)
+    @_logged
+    def bep_create_plan(plan: str, example: bool = False, agency: str | None = None,
+                        overwrite: bool = False) -> dict[str, Any]:
+        """Create a plan file: blank, or the labelled example project (example=true). agency is one
+        of the agency ids from bep_get_catalog. An existing plan is only replaced when
+        overwrite=true, which discards it."""
+        with WRITE_LOCK:
+            path = resolve_plan(plans_dir, plan, must_exist=False)
+            if path.exists() and not overwrite:
+                raise ToolError(f"'{plan}' already exists. Pass overwrite=true to replace it, or pick another name.")
+            p = bep.example_plan() if example else bep.blank_plan()
+            if agency:
+                try:
+                    bep.set_path(p, "project.agency", agency)
+                except ValueError as e:
+                    raise ToolError(str(e)) from e
+            _save(path, p)
+        return {"plan": plan, "created": True, "example": example, **_status(bep.load(path))}
+
+    @server.tool(annotations=EDIT, structured_output=True)
+    @_logged
+    def bep_set_value(plan: str, path: str, value: str) -> dict[str, Any]:
+        """Set one value by dotted path, e.g. 'project.name', 'team.0.email', 'collab.cde',
+        'standards.iso13567'. Values are text; on/off fields take yes/no. Lists are changed with
+        bep_add_row and bep_remove_row, BIM uses with bep_set_bim_use, QC with bep_set_qc."""
+        def change(p):
+            try:
+                old = bep.get_path(p, path)
+            except (KeyError, IndexError, ValueError, TypeError):
+                old = None
+            try:
+                new = bep.set_path(p, path, value)
+            except (KeyError, IndexError, ValueError, TypeError) as e:
+                raise ValueError(f"Couldn't set {path}: {e}") from e
+            return {"path": path, "old": old, "new": new}
+        result, status = _edit(plans_dir, plan, change)
+        return {"plan": plan, **result, "status": status}
+
+    @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False,
+                                             idempotent_hint=False, open_world_hint=False),
+                 structured_output=True)
+    @_logged
+    def bep_add_row(plan: str, list: str, fields: dict[str, str]) -> dict[str, Any]:
+        """Add a row to one of the plan's lists: team, goals, exchanges, tech, deliver or
+        standards.codes (fields per list in bep_get_catalog). A blank placeholder row is filled
+        first instead of adding after it."""
+        def change(p):
+            row = bep.add_row(p, list, fields)
+            return {"list": list, "index": next(i for i, r in enumerate(bep.get_path(p, list)) if r is row),
+                    "row": row}
+        result, status = _edit(plans_dir, plan, change)
+        return {"plan": plan, **result, "status": status}
+
+    @server.tool(annotations=DESTRUCTIVE, structured_output=True)
+    @_logged
+    def bep_remove_row(plan: str, list: str, index: int) -> dict[str, Any]:
+        """Remove a row (0-based index) from team, goals, exchanges, tech, deliver or
+        standards.codes. Read the list with bep_get_plan first to pick the right index."""
+        result, status = _edit(plans_dir, plan, lambda p: {"list": list, "index": index,
+                                                           "removed": bep.remove_row(p, list, index)})
+        return {"plan": plan, **result, "status": status}
+
+    @server.tool(annotations=EDIT, structured_output=True)
+    @_logged
+    def bep_set_bim_use(plan: str, use_id: str, on: bool = True, party: str | None = None,
+                        value: str | None = None, flow: str | None = None) -> dict[str, Any]:
+        """Turn a BIM use on or off (ids in bep_get_catalog) and set who is responsible (party),
+        why it's worth doing (value) and its process flow. Omitted details are left as they are.
+        Turning on 'cobie' also marks COBie handover as required."""
+        result, status = _edit(plans_dir, plan, lambda p: {
+            "use_id": use_id, "use": bep.set_use(p, use_id, on=on, party=party, value=value, flow=flow)})
+        return {"plan": plan, **result, "status": status}
+
+    @server.tool(annotations=EDIT, structured_output=True)
+    @_logged
+    def bep_set_qc(plan: str, id: str, on: bool = True, who: str | None = None,
+                   freq: str | None = None, tool: str | None = None) -> dict[str, Any]:
+        """Configure a QC check (visual, clash, standards, integrity: tool, who, freq) or a model
+        rule (a0-a8, d0-d8: on, who, freq). Checks can't be turned off; rules have no tool.
+        Omitted details are left as they are."""
+        result, status = _edit(plans_dir, plan, lambda p: {
+            "id": id, "qc": bep.set_qc(p, id, on=on, who=who, freq=freq, tool=tool)})
+        return {"plan": plan, **result, "status": status}
+
+    @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True,
+                                             idempotent_hint=True, open_world_hint=False),
+                 structured_output=True)
+    @_logged
+    def bep_save_document(plan: str, document: Literal["plan_md", "plan_html", "layer_definition"],
+                          file_name: str) -> dict[str, Any]:
+        """Write a document into the plans folder: the finished plan as Markdown (plan_md) or HTML
+        (plan_html), or the ISO 13567-3 layer definition file. file_name is a plain name ending
+        in .md, .html or .txt; an existing file of that name is replaced."""
+        if not DOCUMENT_NAME.fullmatch(file_name or ""):
+            raise ToolError(f"'{file_name}' isn't a document file name. Use a name like 'clinic-bep.md' "
+                            "(ending in .md, .html or .txt), with no folders.")
+        root = Path(os.path.realpath(plans_dir))
+        out = Path(os.path.realpath(root / file_name))
+        if out.parent != root:
+            raise ToolError(f"'{file_name}' points outside the plans folder.")
+        p = _load(plans_dir, plan)
+        if document == "layer_definition":
+            text = bep.layer_definition(p)
+        else:
+            doc = bep.build_doc(p)
+            text = bep.to_markdown(p, doc) if document == "plan_md" else bep.to_html(p, doc)
+        with WRITE_LOCK:
+            try:
+                out.write_text(text, encoding="utf-8")
+            except PermissionError as e:
+                raise ToolError(f"Can't write '{file_name}': permission denied.") from e
+        return {"plan": plan, "document": document, "file": file_name, "bytes": len(text.encode("utf-8")),
+                "todo_count": len(bep.collect_todos(bep.build_doc(p)))}
 
     return server
 

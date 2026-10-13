@@ -1,12 +1,13 @@
 # Design: `bep_mcp`, an MCP server for bep-builder
 
-Status: **being built.** Steps 1 and 2 of the [delivery plan](#6-delivery-plan) are done: `bep.py`'s plain functions, and the server with its read-only tools, in `servers/bep_mcp/`.
+Status: **being built.** Steps 1–3 of the [delivery plan](#6-delivery-plan) are done: `bep.py`'s plain functions, and the server in `servers/bep_mcp/` with its read-only and write tools.
 
 **Changes from the original proposal, found while building:**
 - **Location:** the server lives in `servers/bep_mcp/`, not `mcp/bep_mcp/`. A top-level `mcp/` folder would shadow the `mcp` SDK package whenever Python runs from the repository root.
 - **SDK:** the MCP Python SDK is now version 2, where `FastMCP` became `MCPServer` and anticipated failures raise `ToolError`. The server needs `mcp>=2,<3` and Python 3.10 or newer; the CLI still needs only 3.8.
 - **Responses:** data tools return JSON both as text and as `structuredContent`, rather than a separate Markdown summary. Document tools (map, export, definition) return plain text.
 - **Refactor:** `convert` and `definition` were extracted too (`convert_layers`, `layer_definition`), so their tools reuse the CLI's logic.
+- **Saving documents:** writing an export or the definition file is its own tool, `bep_save_document`, instead of a `save_as` option on `bep_export_plan`. That keeps the export tool read-only, since a tool's annotations can't depend on its arguments.
 
 ## Summary
 
@@ -189,7 +190,7 @@ claude mcp add bep -e BEP_PLANS_DIR="$HOME/plans" -- bep_mcp
 
 1. **Refactor** `add`, `use`, `qc` and `check-names` in `bep.py` into plain functions (§3.2). Existing tests must pass unchanged. Size: S. *(Done.)*
 2. **Server skeleton:** `servers/bep_mcp/` with the sandbox, error mapping and the 10 read-only tools, plus `test_mcp.py` (run in CI). Size: M. *(Done.)*
-3. **Write tools** (`create`, `set`, `add`, `remove`, `use`, `qc`, `export save_as`), plus the parity tests. Size: M.
+3. **Write tools** (`create`, `set`, `add`, `remove`, `use`, `qc`, `save_document`), plus the parity tests and a concurrency test for the write lock. Size: M. *(Done.)*
 4. **Packaging and CI:** add `pyproject.toml`, put `pip install mcp` in CI, and document it in `README.md` and `docs/onboarding/`. Size: S.
 5. **Evaluations:** `evals.xml` with 10 questions, then fix any tool descriptions they show to be unclear. Size: M.
 6. *(Phase 2)* Resources and the `start_bep` prompt. Size: S.
