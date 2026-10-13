@@ -209,9 +209,9 @@ def test_set_refuses_sections_and_keeps_file_valid():
         assert json.loads((d / "p.json").read_text())["team"][0]["name"] == "Ana"
         assert [f.name for f in d.iterdir()] == ["p.json"]              # atomic save leaves no temp file
         if os.name == "posix":
-            os.chmod(d / "p.json", 0o640)
+            os.chmod(d / "p.json", 0o700)   # owner-only, but not mkstemp's 0o600
             assert bep("set", d / "p.json", "project.name", "X")[0] == 0
-            assert (d / "p.json").stat().st_mode & 0o777 == 0o640       # permissions kept
+            assert (d / "p.json").stat().st_mode & 0o777 == 0o700       # permissions kept
     finally:
         shutil.rmtree(d)
 
