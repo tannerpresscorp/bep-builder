@@ -163,6 +163,171 @@ console.log(JSON.stringify(out));
     assert app["iso"] == [[iso13567.check(n, prof) == [], iso13567.convert(n, prof, None, "SHET")[0]] for n in names]
 
 
+# ---------------------------------------------------------------- regression tests for the
+# high-priority review items (CLI data safety, workbook injection, app saving and downloads)
+def _app_js():
+    html = (ROOT / "app/index.html").read_text()
+    return html.split("<script>")[1].split("</script>")[0].split("/* ---------- Events ---------- */")[0]
+
+
+# Just enough DOM for the app's helpers to run under Node.
+DOM_STUB = """
+globalThis.__clicked = [];
+globalThis.document = {
+  querySelector: () => ({}),
+  body: { appendChild() {} },
+  createElement: () => ({ style: {}, click() { __clicked.push({ href: this.href, download: this.download }); }, remove() {} })
+};
+"""
+
+
+def _node(code):
+    node = shutil.which("node")
+    if not node:
+        return None
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as fh:
+        fh.write(DOM_STUB + _app_js() + "\n" + code)
+    try:
+        r = subprocess.run([node, fh.name], capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        return json.loads(r.stdout)
+    finally:
+        os.unlink(fh.name)
+
+
+def test_set_refuses_sections_and_keeps_file_valid():
+    d = Path(tempfile.mkdtemp())
+    try:
+        assert bep("init", d / "p.json")[0] == 0
+        before = (d / "p.json").read_text()
+        for path, value in (("project", "foo"), ("team", "foo"), ("uses.coord", "x"), ("team.-1.name", "Bob")):
+            code, out = bep("set", d / "p.json", path, value)
+            assert code != 0 and "Couldn't set" in out, out
+        assert (d / "p.json").read_text() == before                    # nothing was written
+        assert bep("status", d / "p.json")[0] == 0                      # file still loads
+        assert bep("set", d / "p.json", "team.0.name", "Ana")[0] == 0
+        assert json.loads((d / "p.json").read_text())["team"][0]["name"] == "Ana"
+        assert [f.name for f in d.iterdir()] == ["p.json"]              # atomic save leaves no temp file
+    finally:
+        shutil.rmtree(d)
+
+
+def test_partial_rows_are_filled_from_templates():
+    sys.path.insert(0, str(CLI))
+    import bep as cli
+    plan = json.loads((ROOT / "examples/example-plan.json").read_text())
+    del plan["team"][0]["email"]
+    del plan["exchanges"][0]["lod"]
+    plan["standards"]["codes"] = [{"code": "ACOU"}]
+    plan["collab"] = "damaged"                                         # a section saved as a scalar
+    d = Path(tempfile.mkdtemp())
+    try:
+        (d / "p.json").write_text(json.dumps(plan))
+        code, out = bep("export", d / "p.json", "-o", d / "p.md")
+        assert code == 0, out
+        n = cli.normalize(plan)
+        assert n["team"][0]["email"] == "" and n["exchanges"][0]["lod"] == ""
+        assert n["standards"]["codes"] == [{"code": "ACOU", "meaning": ""}]
+        assert n["collab"] == cli.blank_plan()["collab"]
+        assert "TODO: Coordination model: LOD" in (d / "p.md").read_text()
+    finally:
+        shutil.rmtree(d)
+
+
+def test_maps_workbook_writes_plan_text_as_text():
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        print("  (skipped: openpyxl not installed)")
+        return
+    evil = '=HYPERLINK("http://example.invalid","Click")'
+    d = Path(tempfile.mkdtemp())
+    try:
+        shutil.copy(ROOT / "examples/example-plan.json", d / "p.json")
+        assert bep("use", d / "p.json", "coord", "--party", evil)[0] == 0
+        assert bep("add", d / "p.json", "exchanges", f"what={evil}", "lod=LOD 300")[0] == 0
+        assert bep("maps-workbook", d / "p.json", "-o", d / "maps.xlsx")[0] == 0
+        wb = load_workbook(d / "maps.xlsx")
+        cells = [c for ws in (wb["Uses"], wb["Exchanges"]) for row in ws.iter_rows(min_row=2) for c in row
+                 if c.value == evil]
+        assert len(cells) == 2 and all(c.data_type == "s" for c in cells)   # text, not formulas
+        code, out = bep("apply-maps", d / "p.json", d / "maps.xlsx")
+        assert code == 0 and "No changes" in out, out                       # round trip unchanged
+    finally:
+        shutil.rmtree(d)
+
+
+def test_app_downloads_without_the_claude_capability():
+    out = _node("""
+(async () => {
+  const ok = await saveFile("plan-bep.md", "# Plan", "text/markdown");
+  console.log(JSON.stringify({ ok, clicked: __clicked }));
+})();
+""")
+    if out is None:
+        print("  (skipped: Node.js not installed)")
+        return
+    assert out["ok"] is True
+    assert len(out["clicked"]) == 1 and out["clicked"][0]["download"] == "plan-bep.md"
+    assert out["clicked"][0]["href"].startswith("blob:")
+
+
+def test_app_shared_save_keeps_teammates_changes():
+    out = _node("""
+const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
+  if (y && typeof y === "object" && !Array.isArray(y) && x && typeof x === "object" && !Array.isArray(x)) merge(x, y); else a[k] = y; } return a; };
+(async () => {
+  plan = normalize(examplePlan());
+  const server = { doc: { plan: clone(plan) }, sets: 0, updates: 0 };
+  planRef = {   // db document: set replaces; update merges objects, replaces arrays, needs the doc
+    set: async d => { server.sets++; server.doc = clone(d); },
+    update: async d => { server.updates++; if (!server.doc) throw { code: "invalid_argument" }; merge(server.doc, clone(d)); }
+  };
+  mode = "shared"; docExists = true;
+  server.doc.plan.collab.cde = "Teammate CDE";          // a teammate saved first
+  plan.project.name = "Mine"; scheduleSave("project.name");
+  plan.team[1].name = "New name"; scheduleSave("team.1.name");
+  clearTimeout(saveTimer); await flush();
+  const first = { plan: clone(server.doc.plan), sets: server.sets, updates: server.updates };
+
+  server.doc = null;                                     // the document was deleted
+  plan.project.owner = "Owner X"; scheduleSave("project.owner");
+  clearTimeout(saveTimer); await flush();
+  const second = { owner: server.doc.plan.project.owner, name: server.doc.plan.project.name, sets: server.sets };
+
+  const remote = normalize(examplePlan()); remote.goals[0].goal = "Teammate goal";
+  const local = normalize(examplePlan()); local.project.location = "My unsaved edit";
+  const merged = overlayEdits(remote, local, ["project.location"]);
+  console.log(JSON.stringify({ first, second,
+    roots: ["team.1.name", "standards.codes.0.code", "uses.coord.on", "project.name"].map(patchRoot),
+    merged: { goal: merged.goals[0].goal, location: merged.project.location } }));
+})();
+""")
+    if out is None:
+        print("  (skipped: Node.js not installed)")
+        return
+    f = out["first"]
+    assert f["sets"] == 0 and f["updates"] == 1                     # one merge-write, no whole-plan overwrite
+    assert f["plan"]["collab"]["cde"] == "Teammate CDE"              # teammate's change survives
+    assert f["plan"]["project"]["name"] == "Mine" and f["plan"]["team"][1]["name"] == "New name"
+    s = out["second"]
+    assert s["sets"] == 1 and s["owner"] == "Owner X" and s["name"] == "Mine"   # recreated whole
+    assert out["roots"] == ["team", "standards.codes", "uses.coord.on", "project.name"]
+    assert out["merged"] == {"goal": "Teammate goal", "location": "My unsaved edit"}
+
+
+def test_pages_build_is_a_full_document():
+    sys.path.insert(0, str(ROOT / "tools"))
+    import build_pages
+    out = build_pages.build((ROOT / "app/index.html").read_text())
+    head, body = out.split("</head>", 1)
+    assert out.startswith("<!doctype html>\n<html lang=\"en\">")
+    assert '<meta charset="utf-8">' in head and 'name="viewport"' in head
+    assert "<title>BIM Execution Plan Builder</title>" in head and "<style>" in head
+    assert "--paper:" in head                                         # the app's stylesheet moved into <head>
+    assert body.lstrip().startswith('<body>\n<div class="wrap">') and body.rstrip().endswith("</body>\n</html>")
+    assert build_pages.build(out) == out                              # idempotent
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in [(k, v) for k, v in dict(globals()).items() if k.startswith("test_") and callable(v)]:

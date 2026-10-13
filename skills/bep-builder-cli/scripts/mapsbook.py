@@ -12,6 +12,19 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.comments import Comment
 
 
+def put(ws, row, column, value):
+    """Write plan text as plain text.
+
+    openpyxl turns any string starting with "=" into a live formula. Plan values come
+    from people (and from the shared web-app store), so a value such as
+    =HYPERLINK("http://...") must stay text rather than run when the workbook opens.
+    """
+    cell = ws.cell(row=row, column=column, value=value)
+    if isinstance(value, str) and value.startswith("="):
+        cell.data_type = "s"
+    return cell
+
+
 def build(plans, out):
     """plans: list of (project name, plan dict). Writes the workbook to `out`."""
     bep = sys.modules.get("__main__") if hasattr(sys.modules.get("__main__"), "exchange_feeds") else __import__("bep")
@@ -72,7 +85,7 @@ def build(plans, out):
             ph = processmap._phase_of(uphase)
             u = p["uses"][uid]
             vals = [name, ph, uname, uid, "Y" if u["on"] else "N", u.get("party", "")]
-            for c, v in enumerate(vals, 1): us.cell(row=r, column=c, value=v)
+            for c, v in enumerate(vals, 1): put(us, r, c, v)
             us.cell(row=r, column=7, value=f'=IF(E{r}<>"Y","—",IF(COUNTIFS(A$2:A{r},A{r},B$2:B{r},B{r},E$2:E{r},"Y")=1,"Phase lead","Box"))')
             style_row(us, r, 7, inputs=(5, 6)); r += 1
     uses_last = r - 1
@@ -96,7 +109,7 @@ def build(plans, out):
             fid = bep.exchange_feeds(p, e)
             feeds = dict((u[0], u[1]) for u in bep.USES).get(fid, "")
             vals = [name, e["what"], e.get("from", ""), e.get("to", ""), e.get("content", ""), e.get("lod", ""), e.get("due", ""), feeds]
-            for c, v in enumerate(vals, 1): ex.cell(row=r, column=c, value=v)
+            for c, v in enumerate(vals, 1): put(ex, r, c, v)
             ex.cell(row=r, column=9, value=f'=B{r}&IF(F{r}<>""," · "&F{r},"")&IF(G{r}<>""," · "&G{r},"")')
             ex.cell(row=r, column=10, value=f'=IF(H{r}="","No — pick the use it feeds",IF(COUNTIFS(Uses!$A$2:$A${uses_last},A{r},Uses!$C$2:$C${uses_last},H{r},Uses!$E$2:$E${uses_last},"Y")>0,"Yes","No — that use isn\'t selected"))')
             if added and e["what"] == "COBie handover" and not e.get("from"):
@@ -125,7 +138,7 @@ def build(plans, out):
     U = f"Uses!$A$2:$A${uses_last}"; UB = f"Uses!$B$2:$B${uses_last}"; UE = f"Uses!$E$2:$E${uses_last}"
     EA = f"Exchanges!$A$2:$A${ex_last}"; EJ = f"Exchanges!$J$2:$J${ex_last}"
     for i, (name, _) in enumerate(plans, 2):
-        sm.cell(row=i, column=1, value=name)
+        put(sm, i, 1, name)
         sm.cell(row=i, column=2, value=f'=COUNTIFS({U},A{i},{UE},"Y")')
         sm.cell(row=i, column=3, value="=" + "+".join(f'(COUNTIFS({U},$A{i},{UB},"{ph}",{UE},"Y")>0)' for ph in PH))
         # placeholders: phases between first and last used phase with no use. Planning always has the requirements box, so first = Planning.

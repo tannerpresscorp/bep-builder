@@ -93,7 +93,7 @@ exchanges that match no use are listed in a note rather than dropped.
 **Planning maps in a spreadsheet (Excel or Numbers on iPhone/iPad).** When the team
 wants to review uses and exchanges in a spreadsheet:
 
-1. `$B maps-workbook plan.json [other-plan.json …] -o maps.xlsx` (needs openpyxl) builds
+1. `$B maps-workbook plan.json [other-plan.json …] -o maps.xlsx` (needs openpyxl; also install defusedxml so workbooks are read safely) builds
    the workbook — Uses, Exchanges, Summary, Keywords, Read Me — one row set per project.
    Keep a copy; it's the baseline for comparing what comes back.
 2. Send it. If they'll edit on a phone or iPad, follow the `ios-numbers-spreadsheets`

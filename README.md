@@ -14,7 +14,8 @@ Whole Building Design Guide (WBDG) criteria, and agency overrides.
 
 The web app is published to GitHub Pages at
 <https://imatthewtanner.github.io/bep-builder/> on every push to `master` that changes
-`app/` (`.github/workflows/pages.yml`).
+`app/` (`.github/workflows/pages.yml`). The workflow runs `tools/build_pages.py` to wrap the
+artifact page in a full HTML document (doctype, charset, language, viewport) for Pages.
 
 ## Quick start (CLI)
 
@@ -40,7 +41,7 @@ that replaces `ANNO` when ISO 13567 is on.
 ## Tests
 
 ```bash
-pip install openpyxl
+pip install openpyxl defusedxml   # defusedxml: openpyxl uses it to read workbooks safely
 python tests/test_bep.py
 ```
 

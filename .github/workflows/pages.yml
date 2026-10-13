@@ -4,6 +4,7 @@ on:
     branches: [master]
     paths:
       - "app/**"
+      - "tools/build_pages.py"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -25,8 +26,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Wrap the artifact page in a full HTML document
+        run: python3 tools/build_pages.py app/index.html _site/index.html
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: app
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4
