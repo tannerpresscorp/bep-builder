@@ -4,7 +4,10 @@ on:
   pull_request:
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -16,4 +19,4 @@ jobs:
       - run: pip install openpyxl defusedxml
       - run: python tests/test_bep.py
       - name: Example plan exports
-        run: python skills/bep-builder-cli/scripts/bep.py export examples/example-plan.json -o /tmp/example.md
+        run: python skills/bep-builder-cli/scripts/bep.py export examples/example-plan.json -o "${{ runner.temp }}/example.md"
