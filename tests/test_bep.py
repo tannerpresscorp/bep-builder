@@ -348,13 +348,26 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
   const unknownFirst = { gets: slow.gets, sets: slow.sets, updates: slow.updates,
     keptGoal: slow.doc.plan.goals[0].goal, phase: slow.doc.plan.project.phase };
 
+  // An edit made while connecting is saved once the first snapshot arrives.
+  const conn = { doc: { plan: clone(remote) }, updates: 0 };
+  planRef = { get: async () => ({ exists: true }), set: async () => {},
+              update: async d => { conn.updates++; merge(conn.doc, clone(d)); } };
+  plan = normalize(blankPlan()); dirty.clear(); fullSave = false; docExists = null; mode = "connecting";
+  plan.project.owner = "Typed while connecting"; scheduleSave("project.owner");
+  const queuedWhileConnecting = !!saveTimer;
+  onRemote({ exists: true, data: () => ({ plan: clone(remote), clientId: "teammate" }) });
+  const scheduledOnConnect = !!saveTimer;
+  clearTimeout(saveTimer); await flush();
+  const connecting = { queuedWhileConnecting, scheduledOnConnect, updates: conn.updates,
+    owner: conn.doc.plan.project.owner, keptGoal: conn.doc.plan.goals[0].goal };
+
   // A deleted shared plan clears a teammate version still waiting behind the banner.
   latestRemote = { plan: remote }; pendingRemote = true;
   onRemote({ exists: false });
   const staleCleared = latestRemote === null && pendingRemote === false;
   console.log(JSON.stringify({ first, second,
     roots: ["team.1.name", "standards.codes.0.code", "uses.coord.on", "project.name"].map(patchRoot),
-    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared, unknownFirst }));
+    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared, unknownFirst, connecting }));
 })();
 """)
     if out is None:
@@ -371,6 +384,8 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     assert out["keptCleared"] is True and out["inFlightKept"] is True and out["staleCleared"] is True
     assert out["unknownFirst"] == {"gets": 1, "sets": 0, "updates": 1,                # merged, not overwritten
                                    "keptGoal": "Teammate goal", "phase": "Construction"}
+    assert out["connecting"] == {"queuedWhileConnecting": False, "scheduledOnConnect": True, "updates": 1,
+                                 "owner": "Typed while connecting", "keptGoal": "Teammate goal"}
 
 
 def test_pages_build_is_a_full_document():

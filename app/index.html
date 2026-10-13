@@ -1143,6 +1143,11 @@ async function flush() {
   if (saveQueued) { saveQueued = false; await flush(); }
   renderStatus();
 }
+// Leave "connecting": edits made while connecting were recorded but not saved, so save them now.
+function finishConnecting() {
+  mode = canWrite ? "shared" : "readonly";
+  if (mode === "shared" && (dirty.size || fullSave) && !saveTimer && !saving) saveTimer = setTimeout(flush, 900);
+}
 function applyRemote(d) {
   if (fullSave || inFlightFull) {
     // A whole-plan change (Load example, Clear plan) is still waiting to save, or saving now,
@@ -1163,13 +1168,13 @@ function onRemote(snap) {
     // The shared plan was deleted: drop any teammate version waiting behind the banner.
     docExists = false; latestRemote = null;
     if (pendingRemote) { pendingRemote = false; renderBanner(); }
-    if (mode === "connecting") { mode = canWrite ? "shared" : "readonly"; renderAll(); }
+    if (mode === "connecting") { finishConnecting(); renderAll(); }
     return;
   }
   docExists = true;
   const d = snap.data();
   latestRemote = d;
-  if (mode === "connecting") mode = canWrite ? "shared" : "readonly";
+  if (mode === "connecting") finishConnecting();
   const idle = Date.now() - lastLocalEdit > 4000 && !saveTimer && !saving;
   if (d.clientId === clientId) {
     // Our own save echoing back. It carries the merged shared plan, so a teammate's change
@@ -1262,7 +1267,7 @@ renderAll();
   db = dbNs; planRef = db.doc("bep/plan");
   mode = canWrite ? "connecting" : "readonly";
   planRef.onSnapshot(onRemote, err => { if (err && (err.code === "revoked" || err.code === "unavailable")) { mode = "local"; renderAll(); } });
-  setTimeout(() => { if (mode === "connecting") { mode = canWrite ? "shared" : "readonly"; renderAll(); } }, 6000);
+  setTimeout(() => { if (mode === "connecting") { finishConnecting(); renderAll(); } }, 6000);
 })();
 
 function useLocal() {
