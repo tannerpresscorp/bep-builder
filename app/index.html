@@ -362,7 +362,12 @@ const clientId = Math.random().toString(36).slice(2);
 let canWrite = true;
 let mode = "connecting"; // connecting | shared | local | readonly
 let db = null, planRef = null, userCap = null, downloads = null, myId = null;
-let lastLocalEdit = 0, saveTimer = null, saving = false, saveQueued = false, pendingRemote = null;
+let lastLocalEdit = 0, saveTimer = null, saving = false, saveQueued = false, pendingRemote = false;
+// docExists: null until the first snapshot (or a read) says whether the shared plan exists.
+let dirty = new Set(), fullSave = false, docExists = null, latestRemote = null;
+let inFlight = [], inFlightFull = false;   // what the save now in progress is writing
+let committed = [], committedAt = null;    // what the last save wrote, until its echo arrives
+let committedFull = false;                 // the last save wrote the whole plan, until its echo arrives
 let confirmReset = false, confirmExample = false;
 
 /* ---------- Helpers ---------- */
@@ -377,6 +382,18 @@ function setPath(obj, path, val) {
 const filled = v => typeof v === "string" ? v.trim() !== "" : !!v;
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2600); }
 const dis = () => (canWrite ? "" : " disabled");
+/* Offer a file to the viewer: the Claude downloads capability inside an artifact, otherwise
+   a plain browser download (GitHub Pages, a local copy). Resolves true once it's handed over;
+   rejects with the capability's error (e.g. code "declined") when the viewer says no. */
+async function saveFile(filename, data, type) {
+  if (downloads) { const r = await downloads.save({ filename, data }); return !!r && r.status === "saved"; }
+  const url = URL.createObjectURL(new Blob([data], { type: `${type};charset=utf-8` }));
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.rel = "noopener"; a.style.display = "none";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
+}
 
 function input(path, label, opts = {}) {
   const val = getPath(plan, path) ?? "";
@@ -1056,15 +1073,79 @@ function renderLight() { renderIndex(); renderTitle(); renderStatus(); }
 
 /* ---------- Saving ---------- */
 const LS_KEY = "bep-builder-plan";
+// Row templates for the editable lists (port of ROW_TEMPLATES in bep.py).
+const ROW_TEMPLATES = {
+  team: { role: "", org: "", name: "", email: "" },
+  goals: { goal: "", uses: "" },
+  exchanges: { what: "", from: "", to: "", content: "", lod: "", due: "", feeds: "" },
+  tech: { discipline: "", software: "", version: "", formats: "" },
+  deliver: { item: "", format: "", due: "" },
+  "standards.codes": { code: "", meaning: "" }
+};
+// Port of normalize() in bep.py: fill missing keys from the blank plan, repair a section
+// damaged into a scalar, and fill every list row from its template (null fields count as missing).
 function normalize(p) {
-  if (p && p.standards && !("statusField" in p.standards) && p.standards.status === false) p.standards.statusField = "none";
-  const base = blankPlan();
-  const merge = (b, x) => { if (x == null || typeof b !== "object" || Array.isArray(b)) return x ?? b; const o = { ...b }; for (const k in x) o[k] = (k in b) ? merge(b[k], x[k]) : x[k]; return o; };
-  return merge(base, p || {});
+  const isObj = v => v !== null && typeof v === "object" && !Array.isArray(v);
+  if (isObj(p) && isObj(p.standards) && !("statusField" in p.standards) && p.standards.status === false) p.standards.statusField = "none";
+  const merge = (b, x) => {
+    if (x == null) return b;
+    if (!isObj(b)) return x;
+    if (!isObj(x)) return b;
+    const o = { ...b };
+    for (const k of Object.keys(x)) o[k] = Object.hasOwn(b, k) ? merge(b[k], x[k]) : x[k];
+    return o;
+  };
+  const out = merge(blankPlan(), isObj(p) ? p : {});
+  for (const [path, tmpl] of Object.entries(ROW_TEMPLATES)) {
+    const keys = path.split("."), key = keys.pop(), parent = keys.reduce((o, k) => o[k], out);
+    const rows = parent[key];
+    parent[key] = !Array.isArray(rows) ? JSON.parse(JSON.stringify(getPath(blankPlan(), path)))
+      : rows.map(r => isObj(r) ? { ...tmpl, ...Object.fromEntries(Object.entries(r).filter(([, v]) => v != null)) } : { ...tmpl });
+  }
+  return out;
 }
-function scheduleSave() {
+/* Shared saving writes only what changed, so two people editing different fields don't
+   overwrite each other. The db's update() merges nested objects but replaces arrays, so an
+   edit inside a list row (team.2.name) saves that whole list; any other edit saves one field. */
+const clone = v => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
+function patchRoot(path) {
+  const keys = path.split("."), i = keys.findIndex(k => /^\d+$/.test(k));
+  return (i === -1 ? keys : keys.slice(0, i)).join(".");
+}
+function setPathCreate(obj, path, val) {
+  const keys = path.split("."); let o = obj;
+  for (let i = 0; i < keys.length - 1; i++) o = (o[keys[i]] ??= {});
+  o[keys[keys.length - 1]] = val;
+}
+function buildPatch(p, paths) {
+  const out = {};
+  // standards.status is derived from standards.statusField; send it only with that field,
+  // so an unrelated edit from a browser that hasn't caught up can't reset a teammate's choice.
+  const all = paths.includes("standards.statusField") ? [...paths, "standards.status"] : paths;
+  all.forEach(path => setPathCreate(out, path, clone(getPath(p, path))));
+  return out;
+}
+// The latest shared plan with this browser's not-yet-saved edits laid back on top.
+function overlayEdits(base, local, paths) {
+  const out = clone(base);
+  paths.forEach(path => { const v = getPath(local, path); if (v !== undefined) setPathCreate(out, path, clone(v)); });
+  return out;
+}
+// Browser-only saving: keep the whole plan in this browser and drop pending shared writes.
+function saveLocal() {
+  dirty.clear(); fullSave = false;
+  try { localStorage.setItem(LS_KEY, JSON.stringify(plan)); } catch (e) {}
+}
+// Switch to browser-only saving (shared store gone): save here and drop any teammate
+// version waiting behind the banner, since it can no longer be loaded and kept.
+function goLocal() {
+  mode = "local"; pendingRemote = false; latestRemote = null;
+  saveLocal(); renderAll();
+}
+function scheduleSave(path) {
   lastLocalEdit = Date.now();
-  if (mode === "local") { try { localStorage.setItem(LS_KEY, JSON.stringify(plan)); } catch (e) {} return; }
+  if (path) dirty.add(patchRoot(path)); else fullSave = true;   // no path: the whole plan changed (example, reset)
+  if (mode === "local") { saveLocal(); return; }
   if (mode !== "shared") return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(flush, 900);
@@ -1072,36 +1153,92 @@ function scheduleSave() {
 }
 async function flush() {
   saveTimer = null;
+  if (mode === "local") { saveLocal(); renderStatus(); return; }   // shared store dropped out; a retry lands here
   if (saving) { saveQueued = true; return; }
+  if (!fullSave && !dirty.size) { renderStatus(); return; }
   saving = true; renderStatus();
-  plan.standards.status = plan.standards.statusField !== "none";
-  const body = { plan: JSON.parse(JSON.stringify(plan)), updatedBy: myId, updatedAt: new Date().toISOString(), clientId };
-  try { await planRef.set(body); meta = { updatedBy: myId, updatedAt: body.updatedAt }; }
-  catch (e) {
-    if (e && e.code === "invalid_argument") { canWrite = false; mode = "readonly"; renderAll(); toast("This plan is view-only for you, so changes weren't saved."); }
-    else if (e && e.code === "quota_exceeded") toast("The plan is too large to save. Remove some rows and try again.");
-    else if (e && e.code === "unavailable") { setTimeout(() => scheduleSave(), 1500 + Math.random() * 1000); }
-    else { mode = "local"; try { localStorage.setItem(LS_KEY, JSON.stringify(plan)); } catch (x) {} renderAll(); }
+  if (docExists === null) {
+    // Saving before the first snapshot arrived (slow connection): check once, so an
+    // existing shared plan gets a merge, not a whole-plan overwrite from this browser.
+    try { docExists = (await planRef.get()).exists; }
+    catch (e) { saving = false; saveTimer = setTimeout(flush, 1500 + Math.random() * 1000); renderStatus(); return; }
+    if (mode === "local") { saving = false; saveLocal(); renderStatus(); return; }   // store dropped out while checking
   }
-  saving = false;
-  if (saveQueued) { saveQueued = false; flush(); }
+  plan.standards.status = plan.standards.statusField !== "none";
+  const paths = [...dirty], full = fullSave || !docExists;
+  dirty.clear(); fullSave = false;
+  inFlight = paths; inFlightFull = full;
+  const restore = () => { paths.forEach(x => dirty.add(x)); if (full) fullSave = true; };
+  const stamp = { updatedBy: myId, updatedAt: new Date().toISOString(), clientId };
+  try {
+    if (full) await planRef.set({ plan: clone(plan), ...stamp });
+    else await planRef.update({ plan: buildPatch(plan, paths), ...stamp });
+    docExists = true;
+    meta = { updatedBy: myId, updatedAt: stamp.updatedAt };
+    if (full) { committed = []; committedFull = true; }   // the whole plan is saved; keep it whole until its echo
+    else committed = [...new Set([...committed, ...paths])];
+    committedAt = stamp.updatedAt;
+  } catch (e) {
+    const code = e && e.code;
+    if (code === "invalid_argument" && !full) { docExists = false; restore(); saveQueued = true; }   // update needs the doc; it was deleted, so write it whole
+    else if (code === "invalid_argument") { canWrite = false; mode = "readonly"; renderAll(); toast("This plan is view-only for you, so changes weren't saved."); }
+    else if (code === "quota_exceeded") { restore(); toast("The plan is too large to save. Remove some rows and try again."); }
+    else if (code === "unavailable") { restore(); saveTimer = setTimeout(flush, 1500 + Math.random() * 1000); }
+    else goLocal();
+  }
+  saving = false; inFlight = []; inFlightFull = false;
+  if (saveQueued) { saveQueued = false; await flush(); }
   renderStatus();
 }
+// Leave "connecting": edits made while connecting were recorded but not saved, so save them now.
+function finishConnecting() {
+  mode = canWrite ? "shared" : "readonly";
+  if (mode === "shared" && (dirty.size || fullSave) && !saveTimer && !saving) saveTimer = setTimeout(flush, 900);
+}
+function applyRemote(d) {
+  if (fullSave || inFlightFull || committedFull) {
+    // A whole-plan change (Load example, Clear plan) is still waiting to save, or saving now,
+    // and will replace the shared plan anyway, so keep it rather than the teammate's version.
+    meta = { updatedBy: d.updatedBy, updatedAt: d.updatedAt };
+    pendingRemote = false;
+    renderAll();
+    return;
+  }
+  // Keep edits not yet saved, edits being saved, and saved edits whose echo hasn't arrived.
+  plan = normalize(overlayEdits(normalize(d.plan), plan, [...dirty, ...inFlight, ...committed]));
+  meta = { updatedBy: d.updatedBy, updatedAt: d.updatedAt };
+  pendingRemote = false;
+  renderAll();
+}
 function onRemote(snap) {
-  if (!snap.exists) { if (mode === "connecting") { mode = canWrite ? "shared" : "readonly"; renderAll(); } return; }
+  if (!snap.exists) {
+    // The shared plan was deleted: drop any teammate version waiting behind the banner.
+    docExists = false; latestRemote = null;
+    if (pendingRemote) { pendingRemote = false; renderBanner(); }
+    if (mode === "connecting") { finishConnecting(); renderAll(); }
+    return;
+  }
+  docExists = true;
   const d = snap.data();
-  if (mode === "connecting") mode = canWrite ? "shared" : "readonly";
-  if (d.clientId === clientId) { meta = { updatedBy: d.updatedBy, updatedAt: d.updatedAt }; renderStatus(); return; }
+  latestRemote = d;
+  if (mode === "connecting") finishConnecting();
   const idle = Date.now() - lastLocalEdit > 4000 && !saveTimer && !saving;
-  if (idle) { plan = normalize(d.plan); meta = { updatedBy: d.updatedBy, updatedAt: d.updatedAt }; pendingRemote = null; renderAll(); }
-  else { pendingRemote = d; renderBanner(); }
+  if (d.clientId === clientId) {
+    if (committedAt && d.updatedAt >= committedAt) { committed = []; committedFull = false; committedAt = null; }   // our last save is in this snapshot
+    // Our own save echoing back. It carries the merged shared plan, so a teammate's change
+    // that arrived while we were typing can be shown now that we've stopped.
+    if (pendingRemote && idle) { applyRemote(d); return; }
+    meta = { updatedBy: d.updatedBy, updatedAt: d.updatedAt }; renderStatus(); return;
+  }
+  if (idle) applyRemote(d);
+  else { pendingRemote = true; renderBanner(); }
 }
 
 /* ---------- Events ---------- */
 document.addEventListener("input", e => {
   const el = e.target; const path = el.dataset && el.dataset.path; if (!path || !canWrite) return;
   if (el.type === "checkbox" || el.type === "radio" || el.tagName === "SELECT") return;
-  setPath(plan, path, el.value); scheduleSave(); renderLight();
+  setPath(plan, path, el.value); scheduleSave(path); renderLight();
 });
 document.addEventListener("change", e => {
   const el = e.target; const path = el.dataset && el.dataset.path; if (!path || !canWrite) return;
@@ -1109,7 +1246,7 @@ document.addEventListener("change", e => {
   else if (el.type === "radio") { if (el.checked) setPath(plan, path, el.value); }
   else if (el.tagName === "SELECT") setPath(plan, path, el.value);
   else return;
-  scheduleSave();
+  scheduleSave(path);
   const structural = /^uses\.\w+\.on$|^project\.agency$|^project\.iso$|^cobie$|^team\.|^standards\.(iso13567|statusField|layerFormat|level2)$/.test(path);
   if (structural) { const y = window.scrollY; renderAll(); window.scrollTo(0, y); const again = document.getElementById(el.id); if (again) again.focus({ preventScroll: true }); }
   else renderLight();
@@ -1121,11 +1258,11 @@ document.addEventListener("click", async e => {
   const act = a.dataset.action;
   if (act === "add" && canWrite) {
     const list = getPath(plan, a.dataset.list);
-    const tmpl = { team: { role: "", org: "", name: "", email: "" }, goals: { goal: "", uses: "" }, exchanges: { what: "", from: "", to: "", content: "", lod: "", due: "" }, tech: { discipline: "", software: "", version: "", formats: "" }, deliver: { item: "", format: "", due: "" }, "standards.codes": { code: "", meaning: "" } }[a.dataset.list];
-    list.push({ ...tmpl }); scheduleSave(); renderAll();
+    const tmpl = ROW_TEMPLATES[a.dataset.list];
+    list.push({ ...tmpl }); scheduleSave(a.dataset.list); renderAll();
     const rows = document.querySelectorAll(`[data-path^="${a.dataset.list}.${list.length - 1}."]`); if (rows[0]) rows[0].focus();
   }
-  if (act === "remove" && canWrite) { getPath(plan, a.dataset.list).splice(+a.dataset.index, 1); scheduleSave(); renderAll(); }
+  if (act === "remove" && canWrite) { getPath(plan, a.dataset.list).splice(+a.dataset.index, 1); scheduleSave(a.dataset.list); renderAll(); }
   if (act === "check") runChecker();
   if (act === "convert") runConvert();
   if (act === "copy-map") {
@@ -1139,9 +1276,8 @@ document.addEventListener("click", async e => {
     catch (x) { $("#convert-out").innerHTML = `<p class="hint">Copying isn't allowed here. Select the text below and copy it.</p><textarea readonly style="min-height:160px">${esc(t)}</textarea>`; $("#convert-out textarea").select(); }
   }
   if (act === "definition-save") {
-    if (!downloads) { toast("Downloads aren't available here. Use Copy definition file instead."); return; }
     const slug = (plan.project.name || "project").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "project";
-    try { const r = await downloads.save({ filename: `${slug}-layer-definition.txt`, data: isoDefinition(profileFor()) }); if (r.status === "saved") toast("Saved"); }
+    try { if (await saveFile(`${slug}-layer-definition.txt`, isoDefinition(profileFor()), "text/plain")) toast("Saved"); }
     catch (x) { if (x && x.code !== "declined") toast("Saving files isn't available here. Use Copy definition file instead."); }
   }
   if (act === "example") { confirmExample = true; renderSheet(); }
@@ -1150,7 +1286,7 @@ document.addEventListener("click", async e => {
   if (act === "reset") { confirmReset = true; renderSheet(); }
   if (act === "reset-no") { confirmReset = false; renderSheet(); }
   if (act === "reset-yes") { plan = blankPlan(); confirmReset = false; scheduleSave(); current = "project"; renderAll(); toast("Plan cleared"); }
-  if (act === "load-remote" && pendingRemote) { plan = normalize(pendingRemote.plan); meta = { updatedBy: pendingRemote.updatedBy, updatedAt: pendingRemote.updatedAt }; pendingRemote = null; renderAll(); }
+  if (act === "load-remote" && latestRemote) applyRemote(latestRemote);
   if (act === "copy-md") {
     const md = docToMd(buildDoc());
     try { await navigator.clipboard.writeText(md); toast("Copied as Markdown"); }
@@ -1160,8 +1296,7 @@ document.addEventListener("click", async e => {
     const isMd = act === "save-md";
     const slug = (plan.project.name || "bim-execution-plan").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "bep";
     const data = isMd ? docToMd(buildDoc()) : docToHtml(buildDoc(), true);
-    if (!downloads) { toast("Downloads aren't available here. Use Copy as Markdown instead."); return; }
-    try { const r = await downloads.save({ filename: `${slug}-bep.${isMd ? "md" : "html"}`, data }); if (r.status === "saved") toast("Saved"); }
+    try { if (await saveFile(`${slug}-bep.${isMd ? "md" : "html"}`, data, isMd ? "text/markdown" : "text/html")) toast("Saved"); }
     catch (x) { if (x && x.code === "declined") return; if (x && x.code === "rate_limited") toast("A save prompt is already open."); else toast("Saving files isn't available here. Use Copy as Markdown instead."); }
   }
 });
@@ -1179,8 +1314,8 @@ renderAll();
   if (!dbNs) { useLocal(); return; }
   db = dbNs; planRef = db.doc("bep/plan");
   mode = canWrite ? "connecting" : "readonly";
-  planRef.onSnapshot(onRemote, err => { if (err && (err.code === "revoked" || err.code === "unavailable")) { mode = "local"; renderAll(); } });
-  setTimeout(() => { if (mode === "connecting") { mode = canWrite ? "shared" : "readonly"; renderAll(); } }, 6000);
+  planRef.onSnapshot(onRemote, err => { if (err && (err.code === "revoked" || err.code === "unavailable")) goLocal(); });
+  setTimeout(() => { if (mode === "connecting") { finishConnecting(); renderAll(); } }, 6000);
 })();
 
 function useLocal() {

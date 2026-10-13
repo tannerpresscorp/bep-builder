@@ -13,7 +13,7 @@ Tools for writing a BIM Execution Plan (BEP) under the U.S. National CAD Standar
 ## Commands
 
 ```bash
-pip install openpyxl                       # only needed for the maps workbook
+pip install openpyxl defusedxml            # only needed for the maps workbook; defusedxml makes openpyxl read workbooks safely
 python tests/test_bep.py                   # full suite; this is what CI runs
 python -c "import sys; sys.path.insert(0,'tests'); import test_bep; test_bep.test_examples_in_sync()"   # run one test
 
@@ -53,6 +53,7 @@ A change to any of these must be made in both languages. The tests check the two
 
 **How the web app saves.** At start-up, the app checks whether it is running as a Claude artifact (`window.claude`):
 - As an artifact, it saves to a shared store document named `bep/plan` and syncs with teammates through `onSnapshot`. Read-only viewers can't edit.
+- Shared saves write only the fields that changed, with the store's `update()` (nested objects merge; arrays replace, so an edit inside a list row saves that list). Load example, Clear plan and a missing document use a whole-plan `set()`. `buildPatch`, `overlayEdits` and `flush` in the Saving section hold this logic, and `test_app_shared_save_keeps_teammates_changes` covers it.
 - Anywhere else it falls back to `localStorage` (key `bep-builder-plan`), and the page shows a banner saying it saves in this browser only.
 
 **Process map.** `processmap.build()` builds one layout. It then outputs either Mermaid, used in the Markdown export and the app, or a tldraw `exec` script. Exchanges are placed on the arrow into the BIM use they feed. That use comes from the exchange's `feeds` field, or failing that from keyword matching against `USE_KEYWORDS`. Exchanges that match nothing are listed in a note rather than dropped.
@@ -63,5 +64,5 @@ A change to any of these must be made in both languages. The tests check the two
 
 - **New plans start with these firm defaults:** ISO 13567 layer naming is off, the layer format is `element`, the status field uses status letters, and `sheetCode` is `SHET`. Under ISO 13567, `SHET` takes the place of `ANNO` for sheet-level annotation. Keep the CLI and the app in agreement on these.
 - **Licensing:** the repository must contain no NCS text. Reference summaries made from a licensed copy are kept out of it. ISO 9001 and ISO 13567 are cited by clause number only. `.gitignore` excludes `*.pdf`, `*.numbers` and `plans/`, so project data and licensed standards aren't committed.
-- **Deployment:** `.github/workflows/pages.yml` publishes only the `app/` folder to GitHub Pages, at https://tannerpresscorp.github.io/bep-builder/. It runs on pushes to `master` that change `app/`. Don't add a second Pages workflow: both deploy to the same site, and one would overwrite the other.
+- **Deployment:** `.github/workflows/pages.yml` publishes the web app to GitHub Pages, at https://tannerpresscorp.github.io/bep-builder/. It runs `tools/build_pages.py`, which wraps `app/index.html` (written as a Claude artifact page, with no doctype or `<head>`) in a full HTML document, and publishes the result from `_site/`. It runs on pushes to `master` that change `app/` or `tools/build_pages.py`. Don't add a second Pages workflow: both deploy to the same site, and one would overwrite the other.
 - **Example data:** keep example values clearly marked "Example"/"EXAMPLE". Skills and evals must never make up project facts. Anything unknown stays a TODO.

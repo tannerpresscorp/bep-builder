@@ -40,6 +40,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import iso13567  # noqa: E402  (bundled next to this script)
@@ -230,17 +231,34 @@ def example_plan():
 
 
 def normalize(p):
-    """Fill missing keys from the blank plan so older or partial files still work."""
+    """Fill missing keys from the blank plan so older or partial files still work.
+
+    Sections are merged key by key, and every row of a list (team, exchanges, ...) is
+    filled from its row template, so a row saved without a field doesn't crash export.
+    """
     def merge(base, x):
         if x is None:
             return base
         if not isinstance(base, dict):
             return x
+        if not isinstance(x, dict):
+            return base   # a section replaced by a scalar (damaged file): fall back to blank
         out = dict(base)
         for k, v in x.items():
             out[k] = merge(base[k], v) if k in base else v
         return out
-    return merge(blank_plan(), p or {})
+    plan = merge(blank_plan(), p if isinstance(p, dict) else {})
+    for list_path, template in ROW_TEMPLATES.items():
+        parent, key = _walk(plan, list_path)
+        rows = parent.get(key)
+        if not isinstance(rows, list):
+            parent[key] = copy.deepcopy(get_path(blank_plan(), list_path))
+            continue
+        # a row damaged into a scalar (e.g. by an old `set team.0 foo`) becomes a blank row;
+        # null fields count as missing, as they do for sections
+        parent[key] = [{**template, **{k: v for k, v in row.items() if v is not None}}
+                       if isinstance(row, dict) else dict(template) for row in rows]
+    return plan
 
 
 def load(path):
@@ -249,8 +267,8 @@ def load(path):
     # Accept the web app's stored document ({"plan": {...}, "updatedBy": ..., ...})
     if isinstance(data, dict) and "plan" in data and "project" not in data:
         data = data["plan"]
-    std = (data or {}).get("standards", {})
-    if "statusField" not in std and std.get("status") is False:
+    std = data.get("standards") if isinstance(data, dict) else None
+    if isinstance(std, dict) and "statusField" not in std and std.get("status") is False:
         std["statusField"] = "none"   # older plans stored only an on/off flag
     plan = normalize(data)
     plan["standards"]["status"] = plan["standards"]["statusField"] != "none"
@@ -258,30 +276,64 @@ def load(path):
 
 
 def save(path, plan):
+    """Write the plan atomically: a crash mid-write leaves the previous file intact."""
     plan["standards"]["status"] = plan["standards"].get("statusField", "status") != "none"
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(plan, fh, indent=2, ensure_ascii=False)
-        fh.write("\n")
+    path = os.path.realpath(path)   # write through a symlink to the real plan, keeping the link
+    if os.path.exists(path) and not os.access(path, os.W_OK):
+        # os.replace would swap out a read-only plan; refuse, as writing in place would
+        raise PermissionError(f"{path} is read-only")
+    folder = os.path.dirname(path)
+    fd, tmp = tempfile.mkstemp(prefix=".bep-", suffix=".json", dir=folder)
+    try:
+        # mkstemp creates the file owner-only (0600); keep the plan's existing permissions,
+        # or the normal umask-derived mode for a new plan, so shared plans stay readable.
+        try:
+            mode = os.stat(path).st_mode & 0o7777
+        except FileNotFoundError:
+            umask = os.umask(0)
+            os.umask(umask)
+            mode = 0o666 & ~umask
+        os.chmod(tmp, mode)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(plan, fh, indent=2, ensure_ascii=False)
+            fh.write("\n")
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
 
 
-def _walk(obj, path, create=False):
+def _index(k):
+    i = int(k)
+    if i < 0:
+        raise IndexError(f"row index {k} must be 0 or more")
+    return i
+
+
+def _walk(obj, path):
     keys = path.split(".")
     for k in keys[:-1]:
-        obj = obj[int(k)] if isinstance(obj, list) else obj[k]
+        obj = obj[_index(k)] if isinstance(obj, list) else obj[k]
     return obj, keys[-1]
 
 
 def get_path(plan, path):
     obj, last = _walk(plan, path)
-    return obj[int(last)] if isinstance(obj, list) else obj[last]
+    return obj[_index(last)] if isinstance(obj, list) else obj[last]
 
 
 def set_path(plan, path, raw):
     obj, last = _walk(plan, path)
-    key = int(last) if isinstance(obj, list) else last
+    key = _index(last) if isinstance(obj, list) else last
     if isinstance(obj, dict) and key not in obj:
         raise ValueError(f"'{last}' isn't a field here. Fields: {', '.join(obj)}")
     current = obj[key]
+    if isinstance(current, (dict, list)):
+        kind = "list" if isinstance(current, list) else "section"
+        hint = ("use 'add' or 'remove' for rows" if isinstance(current, list)
+                else f"set one of its fields: {', '.join(current)}")
+        raise ValueError(f"'{path}' is a {kind}, not a single value; {hint}")
     if isinstance(current, bool):
         word = raw.strip().lower()
         if word not in ("1", "true", "yes", "y", "on", "0", "false", "no", "n", "off"):
@@ -688,7 +740,6 @@ def is_sheet(n):
 
 # ---------------------------------------------------------------- commands
 def cmd_init(a):
-    import os
     if os.path.exists(a.plan) and not a.force:
         sys.exit(f"{a.plan} already exists. Use --force to overwrite it.")
     plan = example_plan() if a.example else blank_plan()
@@ -740,7 +791,7 @@ def cmd_set(a):
     plan = load(a.plan)
     try:
         v = set_path(plan, a.path, a.value)
-    except (KeyError, IndexError, ValueError) as e:
+    except (KeyError, IndexError, ValueError, TypeError) as e:
         sys.exit(f"Couldn't set {a.path}: {e}")
     save(a.plan, plan)
     print(f"{a.path} = {v!r}")
@@ -1091,7 +1142,10 @@ def main(argv=None):
     s.add_argument("-o", "--output"); s.set_defaults(fn=cmd_export)
 
     a = ap.parse_args(argv)
-    a.fn(a)
+    try:
+        a.fn(a)
+    except PermissionError as e:
+        sys.exit(f"Permission denied: {e}")
 
 
 if __name__ == "__main__":
