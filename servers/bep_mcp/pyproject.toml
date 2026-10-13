@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bep-mcp"
+version = "0.1.0"
+description = "MCP server for bep-builder BIM Execution Plans"
+requires-python = ">=3.10"
+dependencies = ["mcp>=2,<3"]
+
+[project.scripts]
+bep_mcp = "bep_mcp.server:main"
+
+[tool.setuptools]
+packages = ["bep_mcp"]

@@ -1,6 +1,12 @@
 # Design: `bep_mcp`, an MCP server for bep-builder
 
-Status: **proposal**. Nothing in this document has been built yet.
+Status: **being built.** Steps 1 and 2 of the [delivery plan](#6-delivery-plan) are done: `bep.py`'s plain functions, and the server with its read-only tools, in `servers/bep_mcp/`.
+
+**Changes from the original proposal, found while building:**
+- **Location:** the server lives in `servers/bep_mcp/`, not `mcp/bep_mcp/`. A top-level `mcp/` folder would shadow the `mcp` SDK package whenever Python runs from the repository root.
+- **SDK:** the MCP Python SDK is now version 2, where `FastMCP` became `MCPServer` and anticipated failures raise `ToolError`. The server needs `mcp>=2,<3` and Python 3.10 or newer; the CLI still needs only 3.8.
+- **Responses:** data tools return JSON both as text and as `structuredContent`, rather than a separate Markdown summary. Document tools (map, export, definition) return plain text.
+- **Refactor:** `convert` and `definition` were extracted too (`convert_layers`, `layer_definition`), so their tools reuse the CLI's logic.
 
 ## Summary
 
@@ -54,7 +60,7 @@ Out of scope for v1: the maps workbook round trip (`maps-workbook`, `apply-maps`
 
 ```text
  ┌─────────────────────┐   stdio (JSON-RPC)   ┌──────────────────────────────────────┐
- │ MCP client          │ ───────────────────▶ │ bep_mcp  (mcp/bep_mcp/server.py)     │
+ │ MCP client          │ ───────────────────▶ │ bep_mcp (servers/bep_mcp/...server)  │
  │ Claude Code,        │ ◀─────────────────── │  FastMCP: tool schemas, annotations, │
  │ Claude Desktop, ... │                      │  path sandbox, error mapping         │
  └─────────────────────┘                      └───────────────┬──────────────────────┘
@@ -69,7 +75,7 @@ Out of scope for v1: the maps workbook round trip (`maps-workbook`, `apply-maps`
                                               └──────────────────────────────────────┘
 ```
 
-**Where it lives:** `mcp/bep_mcp/`, at the top level, beside `skills/` rather than inside it:
+**Where it lives:** `servers/bep_mcp/`, at the top level, beside `skills/` rather than inside it:
 - `server.py`
 - `pyproject.toml`, declaring the `mcp` and `bep_mcp` entry point
 - `README.md`
@@ -154,13 +160,13 @@ There is one stdio client, but it may send overlapping requests, and the SDK doe
   - **Parity:** every write tool must produce the same file as the matching CLI command.
   - **Sandbox:** `../x.json`, absolute paths, an escaping symlink and a bad extension are all rejected.
   - **Errors:** a bad field, a bad index and a read-only plan each return the CLI's message.
-- **Evaluations:** ten read-only questions in `mcp/bep_mcp/evals.xml`, as the mcp-builder process requires. They run against a copy of `examples/` and check that an agent can answer from the tools. Example: "Which BIM use in the example plan has no exchange feeding it?"
+- **Evaluations:** ten read-only questions in `servers/bep_mcp/evals.xml`, as the mcp-builder process requires. They run against a copy of `examples/` and check that an agent can answer from the tools. Example: "Which BIM use in the example plan has no exchange feeding it?"
 - **CI:** add `pip install mcp` to `ci.yml` so `test_mcp.py` runs on Ubuntu and Windows. The Windows UTF-8 fix from #24 already covers the server's output.
 
 **Operations**
 - **Logging:** to stderr only, at INFO level for one line per tool call (the tool, the plan and ok/error), and never the plan's contents.
 - **Monitoring:** none needed for a local process. The client shows tool errors.
-- **Installation:** `pip install ./mcp/bep_mcp`, then register it with a client:
+- **Installation:** `pip install -e servers/bep_mcp`, then register it with a client:
 
 ```bash
 claude mcp add bep -e BEP_PLANS_DIR="$HOME/plans" -- bep_mcp
@@ -173,7 +179,7 @@ claude mcp add bep -e BEP_PLANS_DIR="$HOME/plans" -- bep_mcp
 | Language | **Python** | TypeScript (mcp-builder's default) | All the logic is in Python. TypeScript would mean a third implementation, after Python and the app's JavaScript, and the repository already struggles to keep two in step. |
 | How to call the logic | **Import in-process** | Run `bep.py` as a subprocess per call | A subprocess would need no refactor, but costs ~50 ms per call, means parsing human-oriented stdout, and gives poorer errors. Importing gives structured data and exact messages; its cost is the small refactor in §3.2, which also improves the CLI. |
 | Transport | **stdio** | Streamable HTTP | One local user, and no auth or network exposure to design. HTTP is only worth it for a shared team server (see Revisit later). |
-| Where it lives | **`mcp/bep_mcp/`** | Inside `skills/bep-builder-cli/` | Keeps the stdlib-only promise of the CLI skill, and the skill folders independently installable. |
+| Where it lives | **`servers/bep_mcp/`** | Inside `skills/bep-builder-cli/` | Keeps the stdlib-only promise of the CLI skill, and the skill folders independently installable. |
 | Plan addressing | **File name in one folder** | Absolute paths | The sandbox removes a whole class of path-traversal bugs. Users with plans in several folders run one server per folder. |
 | Tool granularity | **One tool per operation (16)** | One generic `bep_run(command, args)` | Typed schemas and per-tool annotations let clients ask before destructive calls (`bep_remove_row`, `bep_create_plan` with overwrite) and let the model pick tools by description. |
 | Concurrent edits | **Last write wins** | Version check (refuse when the file changed since it was read) | Single user. A version field would change the plan format that the app and CLI share. Revisit if it becomes a team server. |
@@ -181,8 +187,8 @@ claude mcp add bep -e BEP_PLANS_DIR="$HOME/plans" -- bep_mcp
 
 ## 6. Delivery plan
 
-1. **Refactor** `add`, `use`, `qc` and `check-names` in `bep.py` into plain functions (§3.2). Existing tests must pass unchanged. Size: S.
-2. **Server skeleton:** `mcp/bep_mcp/` with the sandbox, error mapping and the 7 read-only tools, plus `test_mcp.py`. Size: M.
+1. **Refactor** `add`, `use`, `qc` and `check-names` in `bep.py` into plain functions (§3.2). Existing tests must pass unchanged. Size: S. *(Done.)*
+2. **Server skeleton:** `servers/bep_mcp/` with the sandbox, error mapping and the 10 read-only tools, plus `test_mcp.py` (run in CI). Size: M. *(Done.)*
 3. **Write tools** (`create`, `set`, `add`, `remove`, `use`, `qc`, `export save_as`), plus the parity tests. Size: M.
 4. **Packaging and CI:** add `pyproject.toml`, put `pip install mcp` in CI, and document it in `README.md` and `docs/onboarding/`. Size: S.
 5. **Evaluations:** `evals.xml` with 10 questions, then fix any tool descriptions they show to be unclear. Size: M.
