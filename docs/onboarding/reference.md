@@ -156,7 +156,7 @@ Identical file copies between skills: `iso13567.py` (bep-builder-cli and nationa
 
 ## Tests
 
-`python tests/test_bep.py` runs every `test_*` function and exits 1 if any fail. There are 15:
+`python tests/test_bep.py` runs every `test_*` function and exits 1 if any fail. There are 16:
 
 | Test | Guards | Needs |
 |---|---|---|
@@ -168,6 +168,7 @@ Identical file copies between skills: `iso13567.py` (bep-builder-cli and nationa
 | `test_maps_workbook_round_trip` | Workbook → edit → apply: an unchanged workbook applies as a no-op, applying twice gives the same result, and `diff_tables.py` output. | openpyxl |
 | `test_app_matches_cli` | The app's process map and ISO 13567 results equal Python's. | Node |
 | `test_set_refuses_sections_and_keeps_file_valid` | `set` rejects sections, lists and negative indexes, and leaves the plan file untouched when it does. | |
+| `test_bad_plan_files_give_one_line_errors` | A missing, broken or wrong-kind plan file, or a missing folder, gives a one-line error and exit code 1, never a traceback. | |
 | `test_partial_rows_are_filled_from_templates` | `normalize()` fills rows that are missing fields, so `export` doesn't crash. | |
 | `test_maps_workbook_writes_plan_text_as_text` | Plan text starting with `=` stays text in the workbook. | openpyxl |
 | `test_app_downloads_without_the_claude_capability` | The app's downloads work as a plain browser download outside Claude. | Node |
