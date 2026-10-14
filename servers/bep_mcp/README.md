@@ -126,7 +126,7 @@ bep_mcp --http --config /etc/bep/team.json --port 9000
 bep.example.com { reverse_proxy 127.0.0.1:8765 }
 ```
 
-nginx or a Cloudflare Tunnel work the same way. The proxy must pass the `Authorization` header through, and `public_url` and `allowed_hosts` must name the host people use.
+nginx or a Cloudflare Tunnel work the same way. The proxy must pass the `Authorization` header through, and `public_url` and `allowed_hosts` must name the host people use. With nginx, add `proxy_set_header Host $host;`; without it nginx sends its upstream address as the Host, which isn't in `allowed_hosts`, and every request gets a 421.
 
 **Run exactly one server process** (it starts uvicorn with one worker; don't start several copies or put a process pool in front of it). Edits are serialised by a lock inside the process, and `if_version` relies on the same process seeing every write that goes through MCP. If you run it under systemd or a container, run one instance. Edits made outside the server (the CLI, an editor) are caught by `if_version` too, because the version is read from the file each time.
 
@@ -149,7 +149,7 @@ There are two stores, on purpose:
 - **The team server's folder** holds the plans of record for work done through Claude, the CLI and MCP. It has per-person access, `if_version` checks and a file you can back up or put under version control.
 - **The Claude artifact** (the web app's shared `bep/plan`) is a quick editor in the browser. This server can't see it.
 
-Plans move between the two as JSON, because both use the same format (`bep.py` also reads the app's stored document, which wraps the plan as `{"plan": {...}}`). The app has no JSON import or export button; it downloads Markdown and HTML only. So the move goes through Claude: ask Claude, in a session that can read the artifact's shared data, to save the artifact's plan as a file in the plans folder, or to write a plan file's JSON back into the artifact. Don't edit the same plan in both places at once; the last one saved wins, and the two don't sync.
+Both use the same plan format (`bep.py` also reads the app's stored document, which wraps the plan as `{"plan": {...}}`), but **neither has an import step yet**: the app downloads only Markdown and HTML, and the server has no tool that accepts a plan's JSON. Today, moving a plan needs someone with file access to the server's plans folder, for example a Claude session on that machine that can read the artifact's shared data and write the plan file. Teammates who only connect through the HTTPS address can't move plans. The two stores don't sync, so don't edit the same plan in both.
 
 ### Team server tests
 
