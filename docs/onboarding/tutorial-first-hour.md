@@ -98,7 +98,7 @@ python -m http.server 8000 --bind 127.0.0.1 --directory _site
 
 Open <http://127.0.0.1:8000/> in a browser. On the first sheet, choose **Load example project**. The sheet index on the left fills in, and the progress bar reads **11 of 11 sections complete**. This is the same example plan the CLI made in step 3. Look at **05 Process**: its map is drawn by the JavaScript port of the Python process-map code.
 
-The banner at the top says the plan is saved in this browser only, and links to the team's shared copy. When the page runs as a Claude artifact, it saves to a store the whole team shares instead (see [architecture.md](architecture.md#how-the-app-saves)).
+The banner at the top says the plan is saved in this browser only, and its **Open the shared team plan** button links to the team's shared copy. When the page runs as a Claude artifact, it saves to a store the whole team shares instead (see [architecture.md](architecture.md#how-the-app-saves)).
 
 Stop the server with Ctrl+C when you're done.
 

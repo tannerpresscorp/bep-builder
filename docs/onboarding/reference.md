@@ -8,6 +8,7 @@ Facts about the repository, to look up rather than read through. For *why* thing
 - [Other scripts](#other-scripts)
 - [Module dependencies](#module-dependencies)
 - [Web app script sections](#web-app-script-sections)
+  - [Autodesk Model Properties audit](#autodesk-model-properties-audit)
 - [Logic that exists twice](#logic-that-exists-twice)
 - [Tests](#tests)
 - [MCP server](#mcp-server)
@@ -26,16 +27,17 @@ Facts about the repository, to look up rather than read through. For *why* thing
 | `skills/*/SKILL.md` | The skill's instructions. Its YAML front matter (`name`, `description`) is what Claude reads to decide when to use the skill. |
 | `skills/*/evals/evals.json` | Example prompts, each with the output expected (`id`, `prompt`, `expected_output`, `files`), for evaluating the skill. No test in this repo runs them. |
 | `examples/example-plan.json` | A complete example plan (11 of 11 sections, 0 TODOs). |
-| `servers/bep_mcp/` | The MCP server: `bep_mcp/server.py`, `bep_mcp/team.py` (team config, tokens and grants), its `pyproject.toml` (package `bep-mcp`, command `bep_mcp`), a README listing the tools, and `evals/` (10 evaluation questions with two fixture plans). |
+| `servers/bep_mcp/` | The MCP server: `bep_mcp/server.py`, `bep_mcp/team.py` (team config, tokens and grants), its `pyproject.toml` (package `bep-mcp`, command `bep_mcp`), a README listing the tools, and `evals/` (10 evaluation questions with two fixture plans; [how to run them](../../servers/bep_mcp/README.md#evaluations)). `.gitignore` excludes `plans/` but re-includes `servers/bep_mcp/evals/plans/`. |
 | `docs/design/` | Design proposals, such as `mcp-server.md`. |
 | `tests/test_bep.py` | The main test suite. |
 | `tests/test_mcp.py` | The MCP server's tests. |
 | `tests/test_mcp_team.py` | The team server's tests (HTTP, tokens, grants, versions, audit log). |
 | `.github/workflows/` | `ci.yml` (tests on Linux and Windows), `pages.yml` (deploys the app) and `copilot-setup-steps.yml` (environment for GitHub Copilot's coding agent). |
 | `.github/dependabot.yml` | Keeps the GitHub Actions versions up to date. |
+| `.claude/skills/run-bep-builder/` | A project skill for Claude Code sessions in this repository, not one of the installable `skills/*`. `SKILL.md` has the instructions; `web.cjs` (Playwright) drives the web app in headless Chromium against the `_site/` serve; `mcp_drive.py` drives `bep_mcp` over stdio. See [how-to.md](how-to.md#smoke-test-a-change-in-the-real-app). |
 | `.devcontainer/devcontainer.json` | Codespaces / dev container: Python 3.12, Node 20, openpyxl, defusedxml and `mcp`, port 8000 forwarded. |
 | `SECURITY.md` | How to report a vulnerability. |
-| `workspace/` | Empty folder for local working files. |
+| `workspace/` | Folder for local working files. It holds only a `.gitkeep` placeholder. |
 | `CLAUDE.md` | Guidance for Claude Code sessions in this repo. |
 
 ## Plan JSON
@@ -58,7 +60,7 @@ Facts about the repository, to look up rather than read through. For *why* thing
 | `checks` | object | `visual`, `clash`, `standards`, `integrity`: `{tool, who, freq}`. |
 | `deliver` | list | Rows of `{item, format, due}`. |
 
-When the web app runs as a Claude artifact, it stores the plan wrapped as `{"plan": {...}, "updatedBy": ..., ...}`. `bep.py load()` accepts either form.
+When the web app runs as a Claude artifact, it stores the plan wrapped as `{"plan": {...}, "updatedBy": ..., ...}`. `bep.py loads()` accepts either form: when the object has a `plan` key and no `project` key, it takes the `plan` value. `load(path)` reads the file's bytes and calls `loads()`, so it accepts both too.
 
 `normalize()` repairs whatever it is given: it fills missing keys from the blank plan, replaces a section that has been damaged into a plain value with a blank one, and fills every list row from its row template (`ROW_TEMPLATES`), treating `null` fields as missing. `save()` writes atomically through a temporary file, keeps the file's permissions, and refuses to replace a read-only plan.
 
@@ -69,6 +71,15 @@ The 11 sections, in order, are: 01 project, 02 team, 03 goals, 04 uses, 05 proce
 Run from `skills/bep-builder-cli/scripts/` as `python bep.py COMMAND ...`. Use `python bep.py COMMAND -h` for every option.
 
 The editing and checking commands are thin wrappers around plain functions in `bep.py`'s "plan operations" section: `add_row`, `remove_row`, `set_use`, `set_qc`, `check_names`, `convert_layers` and `layer_definition`, alongside `set_path` for `set`. These change the plan or return data and raise `ValueError` with a message for people, so other callers, such as the [MCP server](#mcp-server), behave exactly like the CLI.
+
+A plan file that is missing, is a folder, isn't valid JSON, isn't UTF-8 text or holds something other than a JSON object raises `PlanFileError`, a `ValueError` defined in `bep.py`. The CLI prints its one-line message and exits 1, with no traceback (`test_bad_plan_files_give_one_line_errors`):
+
+```text
+$ python bep.py status /tmp/bep-nope.json
+No plan file at /tmp/bep-nope.json. Create one with: bep.py init /tmp/bep-nope.json
+```
+
+`loads(raw, label)` is the part of `load()` that parses bytes; `label` names the file in the message. The MCP server calls it so that a plan is parsed from the same bytes its `version` hash is computed from (`parse_plan` and `version_of` in `server.py`).
 
 | Command | Does |
 |---|---|
@@ -96,6 +107,7 @@ The editing and checking commands are thin wrappers around plain functions in `b
 |---|---|
 | `skills/national-cad-standard/scripts/check_names.py` | `python check_names.py [--status-field both\|status\|phase\|none] NAME ... \| --file F`. Prints a Markdown table. Its docstring mentions `references/conventions.md`; that file is deliberately not in the repo (see [architecture.md](architecture.md#licensing)). |
 | `iso13567.py` (both copies) | `python iso13567.py {check,convert,definition} ...`. It works on its own as well as being imported by `bep.py`. |
+| `skills/bep-builder-cli/scripts/aps_model_properties.py` | None: a library with no command line (no `__main__`). Standard-library (`urllib`) helpers for the Autodesk Platform Services Model Properties API: `get_folder_contents`, `extract_model_urns`, `create_index`, `get_index`, `poll_indexes`, `create_query`, `get_query`, `poll_query`, `download_resource`, `write_json` and `APSAPIError`. Nothing imports it and no test covers it. It is separate from the web app's [audit block](#autodesk-model-properties-audit), which doesn't call it. |
 | `skills/ios-numbers-spreadsheets/scripts/read_tables.py` | `python read_tables.py FILE [--header-row N]`. Prints a spreadsheet's tables as JSON. |
 | `skills/ios-numbers-spreadsheets/scripts/diff_tables.py` | `python diff_tables.py ORIGINAL EDITED [--key "Table=Col,Col"] [--json]`. Shows what changed between two copies of a spreadsheet. |
 | `skills/ios-numbers-spreadsheets/scripts/setup_numbers.sh` | Installs `numbers-parser` in its own virtual environment and prints the Python to use for `.numbers` files. |
@@ -119,25 +131,36 @@ Dashed arrows are imports that happen only when that feature is used. Everything
 
 ## Web app script sections
 
-The `<script>` in `app/index.html` is split by `/* ---------- Name ---------- */` markers:
+The `<script>` in `app/index.html` is split by `/* ---------- Name ---------- */` markers. The table follows the file from top to bottom; it lists what each region holds, including code that sits under a marker that doesn't describe it:
 
-| Section | Holds |
+| Marker | Holds |
 |---|---|
-| Reference data | `HELP`, `STEPS`, `AGENCIES`, `USES`, QC rules, `FREQ` |
-| State | `blankPlan()`, `examplePlan()`, and the `plan`, `current` and `mode` variables |
+| Reference data | `HELP` (including `HELP.shared`, the link behind the local-mode banner's **Open the shared team plan** button), `STEPS`, `AGENCIES`, `USES`, `QC_AUTHOR`, `QC_DELIVER`, `QC_CHECKS`, `FREQ` |
+| State | `blankPlan()`, `examplePlan()`, the `plan`, `current` and `mode` variables and the save-state variables, and `apsRows`, `apsFields` and `apsReport` (the [audit block](#autodesk-model-properties-audit)'s imported data) |
 | Helpers | `esc`, `getPath`/`setPath`, `saveFile()` (downloads, through the artifact's `downloads` capability or a plain browser download), `input()`, `editTable()` |
 | Completion | `status()`, the JavaScript counterpart of `section_status()` |
-| Section renderers | One renderer per section (`R`) |
-| ISO 13567 profile | `profileFor`, `isoCheck`, `isoConvert`, `isoDefinition` (port of `iso13567.py`) |
+| Section renderers | `R.project`, `R.team`, `R.goals`, `R.uses`, `R.process`, `R.exchanges`, `R.collab`, `R.tech` and `R.standards`, with `agencyCallout` and `isoBlock` |
+| ISO 13567 profile | `profileFor`, `isoCheck`, `isoConvert`, `isoDefinition` (port of `iso13567.py`). The same region then holds `runConvert`, `R.qc`, `qcGroup`, `R.deliver` and `R.review` |
 | Level 1 process map | `USE_WORDS`, `buildMap`, `mapToMermaid` (port of `processmap.py`) |
 | Document model → Markdown / HTML | `buildDoc`, `docToMd`, `docToHtml` (port of `build_doc` and its exporters) |
-| NCS name checker | `checkLayer`, `checkSheet` (port of `check_names.py`) |
-| Render | `renderIndex`, `renderSheet`, `renderAll`, ... |
+| NCS name checker | `checkLayer`, `checkSheet` (port of `check_names.py`), then the audit block's code (`parseApsJsonLines`, `apsPropertyName`, `apsFieldLabels`, `summarizeApsProperties`, `apsReportHtml`, `importApsFile`), then `runChecker` |
+| Render | `renderIndex`, `renderSheet`, `renderBanner`, `renderAll`, ... |
 | Saving | `ROW_TEMPLATES`, `normalize()`, `buildPatch`, `overlayEdits`, `scheduleSave`, `flush`, `onRemote` |
 | Events | Click and input handlers |
 | Boot | Restores the last step, then `boot()` chooses shared or local saving |
 
-The tests run everything **above the Events marker** in Node, so code they call must stay there.
+The markers are not strict boundaries. Search for a function by name rather than going by its marker. The tests run everything **above the Events marker** in Node, so code they call must stay there.
+
+### Autodesk Model Properties audit
+
+A block on the Review sheet (`R.review`), below the document preview and above "Start over", headed "Autodesk Model Properties audit". It is meant to summarize results downloaded with Autodesk's APS Model Properties PowerShell examples:
+
+- It has two file inputs: a line-delimited JSON results file (`.jsonl`) and an optional fields metadata file (`.json`) that gives properties readable names.
+- `parseApsJsonLines`, `summarizeApsProperties` and `apsReportHtml` count the rows, the viewable objects, how many objects carry each property, and `OBJECT_ADDED`, `OBJECT_CHANGED` and `OBJECT_REMOVED` diff rows.
+- The data stays in the `apsRows`, `apsFields` and `apsReport` variables. It is never written to the plan, to `localStorage` or to the shared store, and the app doesn't sign in to APS.
+- It is JavaScript only, browser only, with no Python counterpart and no test. It doesn't use `aps_model_properties.py`.
+
+At the time of writing, nothing calls `importApsFile`: the two file inputs have no event handler, and the **Clear imported data** button's `data-action="clear-aps"` has no branch in the click handler. Choosing a file leaves the status at "No APS data imported." (seen in headless Chromium).
 
 ## Logic that exists twice
 
@@ -152,6 +175,8 @@ The tests run everything **above the Events marker** in Node, so code they call 
 | `processmap.py` (including `USE_KEYWORDS`) | `buildMap()`, `mapToMermaid()`, `USE_WORDS` | `test_app_matches_cli` |
 | `iso13567.py` | `isoCheck()`, `isoConvert()` | `test_app_matches_cli` |
 | `check_names.py` and `bep.py check_layer` / `check_sheet` | `checkLayer()`, `checkSheet()` | review |
+
+The Autodesk Model Properties audit block is JavaScript only. It is not a pair: there is no Python version to keep in step.
 
 Identical file copies between skills: `iso13567.py` (bep-builder-cli and national-cad-standard) and `read_tables.py` (bep-builder-cli and ios-numbers-spreadsheets). No test compares them; check with `diff` (see [how-to.md](how-to.md#edit-a-module-that-is-copied-between-skills)).
 
@@ -216,7 +241,7 @@ Tests that need Node or openpyxl print `(skipped: ...)` and **pass** when the to
 | `test_viewer_can_read_but_not_write` | A viewer can use every read surface; each write tool and `start_bep` is refused, and the file is unchanged. |
 | `test_editor_can_use_every_write_tool` | An editor can use every write tool, and each returns a `version`; without a grant, `bep_create_plan` is refused. |
 | `test_save_document_needs_editor_on_the_output_name_too` | `bep_save_document` also needs editor on the plan its file name stands for; nothing is written when it is refused. |
-| `test_versions_and_if_version` | A stale `if_version` is refused for every write tool and leaves the file byte-identical; a current one is accepted. |
+| `test_versions_and_if_version` | A stale `if_version` is refused by `bep_set_value`, `bep_add_row`, `bep_remove_row`, `bep_set_bim_use`, `bep_set_qc` and `bep_create_plan` (with `overwrite`), and the file is left as it was; a current one is accepted, and an empty one means no check. `bep_save_document` has no `if_version`. |
 | `test_stdio_mode_unchanged_apart_from_versions` | Local mode has no checks and still reports `plans_dir`, and has `version` and `if_version` too. |
 | `test_audit_log_has_user_and_outcome_and_never_a_token` | Each call logs `user=… kind=… name=… plan=… ok/denied/error`; no token or hash appears. |
 | `test_new_token_prints_a_token_and_its_hash` | `bep_mcp --new-token` prints a token and its SHA-256. |
@@ -224,13 +249,7 @@ Tests that need Node or openpyxl print `(skipped: ...)` and **pass** when the to
 
 ## MCP server
 
-Install with `python -m pip install -e servers/bep_mcp` (editable, from inside the repository, so it finds `bep.py`), then register it with a client, for example `claude mcp add bep -e BEP_PLANS_DIR="$HOME/plans" -- bep_mcp`.
-
-| Setting | Meaning |
-|---|---|
-| `BEP_PLANS_DIR` | Required. The folder whose `*.json` files are the plans the tools can see. |
-| `BEP_TEAM_CONFIG` | Optional. The team config file for `--http`, if `--config` isn't given. |
-| `BEP_CLI_DIR` | Optional. The folder holding `bep.py`, if not this repository's `skills/bep-builder-cli/scripts/`. |
+Install with `python -m pip install -e servers/bep_mcp` (editable, from inside the repository, so it finds `bep.py`). `BEP_PLANS_DIR` is required: it is the folder whose `*.json` files are the plans the tools can see. Registering the server with a client and the other settings (such as `BEP_CLI_DIR`) are in [servers/bep_mcp/README.md](../../servers/bep_mcp/README.md#install-and-connect); the team server (`--http`, config, tokens, grants, `if_version`, audit log) is under [Team server](../../servers/bep_mcp/README.md#team-server).
 
 | Tool | CLI equivalent | Kind |
 |---|---|---|
@@ -244,7 +263,7 @@ Install with `python -m pip install -e servers/bep_mcp` (editable, from inside t
 | `bep_get_process_map` | `process-map` | read |
 | `bep_export_plan` | `export` | read |
 | `bep_get_layer_definition` | `definition` | read |
-| `bep_create_plan` | `init` | write; destructive with `overwrite` |
+| `bep_create_plan` | `init` | write; always annotated destructive (a static hint), though it replaces a plan only with `overwrite` |
 | `bep_set_value` | `set` | write |
 | `bep_add_row` | `add` | write |
 | `bep_remove_row` | `remove` | destructive |
@@ -254,9 +273,7 @@ Install with `python -m pip install -e servers/bep_mcp` (editable, from inside t
 
 It also offers two resources, `bep://catalog` and `bep://plans/{plan}`, and the `start_bep` prompt, which walks the model through a new plan section by section (see the server's README).
 
-Command line: `bep_mcp` (stdio), `bep_mcp --http --config PATH [--host 127.0.0.1] [--port 8765]` (team server, endpoint `/mcp`, one process) and `bep_mcp --new-token` (prints a token and its SHA-256). The team config, grants, `if_version` and the connection steps for Claude Code and claude.ai are in [servers/bep_mcp/README.md](../../servers/bep_mcp/README.md#team-server).
-
-The server logs one line per tool, resource and prompt call to stderr (`user=… kind=… name=… plan=… ok`; `denied` or `error: …` otherwise); stdout carries the protocol in stdio mode.
+In `server.py`, read tools use the annotation `READ`, write tools `EDIT` and destructive tools `DESTRUCTIVE`; `bep_create_plan` is listed as a write but uses `DESTRUCTIVE`. `bep_add_row` (not idempotent) and `bep_save_document` (destructive and idempotent) build their `ToolAnnotations` inline. Writes to a plan go through `_edit`, which holds `WRITE_LOCK`. `bep_create_plan` and `bep_save_document` take `WRITE_LOCK` themselves, because one creates a plan and the other writes a document rather than editing an existing plan.
 
 ## CI and deployment
 

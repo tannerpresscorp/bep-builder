@@ -8,7 +8,7 @@ A BIM Execution Plan (BEP) is the document a building project team agrees on bef
 
 bep-builder helps a team write that plan in a fixed structure. It has 11 sections following the Penn State / NBIMS-US planning procedure, checks names against the US National CAD Standard (NCS), and produces a finished document.
 
-## Three front ends, one plan
+## Front ends, one plan
 
 ```mermaid
 flowchart TB
@@ -33,7 +33,7 @@ flowchart TB
 - **The skills** tell Claude when and how to use the CLI and the reference material, for example "check these layer names" or "start a BEP for our barracks project".
 - **The MCP server** gives Claude, or any MCP client, the CLI's operations as typed tools instead of shell commands. It imports `bep.py` rather than re-implementing it, so it can't drift from the CLI the way the app could.
 
-All three read and write the same **plan JSON** (fields in [reference.md](reference.md#plan-json)). That shared format is the most important thing to keep stable. A plan exported from the app can be validated with the CLI, and a plan built with the CLI loads in the app. `normalize()` exists on both sides so that plans saved by an older version, which lack newer fields, still load.
+All of them read and write the same **plan JSON** (fields in [reference.md](reference.md#plan-json)). That shared format is the most important thing to keep stable. A plan exported from the app can be validated with the CLI, and a plan built with the CLI loads in the app. `normalize()` exists on both sides so that plans saved by an older version, which lack newer fields, still load.
 
 ## Why the web app is a single file
 
@@ -41,7 +41,9 @@ All three read and write the same **plan JSON** (fields in [reference.md](refere
 
 GitHub Pages serves files as they are, so `tools/build_pages.py` adds the same skeleton for the Pages copy: doctype, `charset`, `lang` and a mobile `viewport`. Without it, browsers would render the page in quirks mode and phones would show it at desktop width. That one small script is the app's only build step, and it runs in the Pages workflow, not on contributors' machines.
 
-A bundler or framework would add a real build and a dependency tree to a page that has neither today. The cost is that the file is long (about 1,300 lines). Section markers inside the `<script>` keep it navigable ([list](reference.md#web-app-script-sections)).
+The `charset` matters as much as the doctype. `app/index.html` has no `<meta charset>`, and a plain static server such as `python -m http.server` sends no charset either, so Chromium decodes the file with a legacy encoding and "—" and "→" show up as garbled characters. `build_pages.py` adds the charset, which is why you serve `_site/`, not `app/` ([how-to](how-to.md#run-the-web-app-locally)).
+
+A bundler or framework would add a real build and a dependency tree to a page that has neither today. The cost is that the file is long (about 1,400 lines). Section markers inside the `<script>` keep it navigable ([list](reference.md#web-app-script-sections)).
 
 ## Why the logic exists twice
 
@@ -76,6 +78,8 @@ At start-up, `boot()` looks for `window.claude`, the runtime a Claude artifact p
 
 So the same file serves both cases with no configuration. It does mean that on GitHub Pages the data never leaves the user's browser.
 
+**Two stores, not synced.** The shared artifact's `bep/plan` document and the team server's `*.json` files in `BEP_PLANS_DIR` hold plans in the same format, but they are separate stores. Nothing syncs them and there is no import step: the app downloads only Markdown and HTML, and the server has no tool that accepts plan JSON. Don't edit the same plan in both. See [Where plans live](../../servers/bep_mcp/README.md#where-plans-live) in the server README.
+
 ## The process map model
 
 Section 05 needs a Level 1 process map: which BIM uses happen in which phase, and which information exchanges connect them. `processmap.build()` produces one layout:
@@ -92,11 +96,11 @@ The **maps workbook** is the editable side of this model. `maps-workbook` writes
 
 The server (`servers/bep_mcp/`, design in [docs/design/mcp-server.md](../design/mcp-server.md)) runs on the user's machine over stdio, or, with `--http`, as a shared team server. It is a thin layer over `bep.py`:
 
-- **No rules of its own.** Every CLI command that changes or checks a plan calls a plain function in `bep.py` that returns data and raises `ValueError`. The CLI prints the result or exits with the message; the server returns it as JSON or as an error the model can read and correct. A rule changed in `bep.py` changes both.
+- **No rules of its own.** Every CLI command that changes or checks a plan calls a plain function in `bep.py` that returns data and raises `ValueError`. The CLI prints the result or exits with the message; the server returns it as JSON or as an error the model can read and correct. A rule changed in `bep.py` changes both. The server also parses each plan with `bep.loads()` from the same bytes it hashes for the plan's `version`, so the version and the plan come from one read of the file.
 - **One folder of plans.** Tools take a plan's file name, never a path. `resolve_plan` rejects names with folders and anything that resolves outside `BEP_PLANS_DIR`, symlinks included.
 - **One write at a time.** The SDK runs tool calls on threads, so every load → change → save holds one lock. Without it, two quick edits to the same plan could each load the old file and one would be lost.
-- **Team mode is decided when the server is built.** `create_server(plans_dir, team=config)` makes every plan-touching call need a signed-in user (a per-user bearer token, checked against hashes in a config file) with a `viewer` or `editor` grant on that plan. The checks run in one order on every tool, resource and prompt: name format, then role, then the file. Reads return a `version` (a hash of the file) and writes accept `if_version`, so two people can't silently overwrite each other. It must run as one process. See the [Team server](../design/mcp-server.md#8-team-server) section of the design and [servers/bep_mcp/README.md](../../servers/bep_mcp/README.md#team-server).
-- **Hints for the client.** Each tool says whether it is read-only or destructive (`bep_remove_row`, `bep_save_document`, `bep_create_plan` with `overwrite`), so a client can ask before running the risky ones.
+- **Team mode is decided when the server is built.** `create_server(plans_dir, team=config)` makes every plan-touching call need a signed-in user with a `viewer` or `editor` grant on that plan, and the checks run in one order on every tool, resource and prompt (name format, then role, then the file). A missing plan and an ungranted one get the same denial. Reads return a `version` and writes accept `if_version`, so two people can't silently overwrite each other. It must run as one process. Details: the [Team server](../design/mcp-server.md#8-team-server) section of the design and [servers/bep_mcp/README.md](../../servers/bep_mcp/README.md#team-server).
+- **Hints for the client.** Each tool says whether it is read-only or destructive (`bep_remove_row`, `bep_save_document` and `bep_create_plan`), so a client can ask before running the risky ones. The hint is static: `bep_create_plan` is flagged on every call, although it replaces a plan only with `overwrite`.
 
 The plan JSON gets no new fields from any of this. It needs Python 3.10 and the `mcp` package, unlike the CLI, which is why it lives in `servers/` rather than inside a skill. The folder is not called `mcp/`, because that name would hide the SDK's own `mcp` package on import.
 
@@ -121,4 +125,4 @@ The only deployed piece is the web app. Whenever `app/` or `tools/build_pages.py
 
 ## Where it runs
 
-CI runs both test suites on both Ubuntu and Windows, so the Python code sticks to portable paths and the standard library. A dev container (`.devcontainer/`) gives Codespaces users the same Python 3.12 + Node 20 setup as CI, and `copilot-setup-steps.yml` gives GitHub Copilot's coding agent the same.
+CI runs all three test suites (`test_bep.py`, `test_mcp.py` and `test_mcp_team.py`) on both Ubuntu and Windows, so the Python code sticks to portable paths and the standard library. A dev container (`.devcontainer/`) gives Codespaces users the same Python 3.12 + Node 20 setup as CI, and `copilot-setup-steps.yml` gives GitHub Copilot's coding agent the same.
