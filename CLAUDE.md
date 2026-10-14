@@ -28,7 +28,7 @@ python bep.py validate plan.json --strict  # lists TODOs; exits 1 while any rema
 python bep.py export plan.json -o plan.md  # or --format html
 python bep.py catalog                      # every id the other commands accept
 
-python -m http.server -d app 8000          # serve the web app locally
+python tools/build_pages.py && python -m http.server -d _site 8000   # serve the web app locally (serving app/ directly garbles "—" and "→": it has no charset)
 ```
 
 There is no linter or formatter configured. `test_app_matches_cli` and the app half of `test_examples_in_sync` run only when `node` is on PATH, and print "skipped" otherwise. CI (`.github/workflows/ci.yml`) has Node, so make sure those tests pass locally with Node too.
