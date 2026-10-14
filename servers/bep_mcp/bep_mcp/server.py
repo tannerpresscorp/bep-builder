@@ -160,7 +160,8 @@ def _save(path, plan):
 
 
 def _check_version(plan, current, if_version):
-    """Refuse a write when the caller read an older version of the plan."""
+    """Refuse a write when the caller read an older version of the plan. No if_version (None or
+    "") means no check."""
     if if_version and if_version != current:
         raise ToolError(f"'{plan}' changed since you read it (now version {current}). "
                         "Read it again and retry.")

@@ -228,6 +228,8 @@ Several people should share one folder of BIM Execution Plans through Claude, fr
 
 ### 8.2 How it works
 
+Started with `bep_mcp --http --config PATH` (or `BEP_TEAM_CONFIG`), optional `--host` (default 127.0.0.1) and `--port` (default 8765); `bep_mcp --new-token` makes a token and its hash. Setup steps are in the [server README](../../servers/bep_mcp/README.md#team-server).
+
 ```text
  Claude Code / claude.ai ──HTTPS──▶ proxy ──HTTP, 127.0.0.1──▶ bep_mcp --http (one uvicorn process)
         Authorization: Bearer <token>            │

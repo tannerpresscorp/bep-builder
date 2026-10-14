@@ -101,6 +101,8 @@ class Team:
         self.has_links = False
         try:
             os.symlink("alice-only.json", self.plans / "alias.json")
+            (self.root / "outside-target.json").write_text(json.dumps(plan), encoding="utf-8")
+            os.symlink(self.root / "outside-target.json", self.plans / "outside.json")
             self.has_links = True
         except (OSError, NotImplementedError, AttributeError):    # needs extra rights on Windows
             pass
@@ -301,6 +303,7 @@ def test_config_stores_only_hashes_and_is_checked():
         broken(users={})
         broken(users=None)
         broken(public_url=None)
+        broken(public_url="https://bep.example.com/mcp")     # the server adds /mcp itself
         broken(users={"x": {"token_sha256": "short", "grants": {"*": "viewer"}}})
         broken(users={"x": {"token": "plain-text-token", "token_sha256": "0" * 64, "grants": {"*": "viewer"}}})
         broken(users={"x": {"token_sha256": "0" * 64, "grants": {"*": "owner"}}})
@@ -495,6 +498,30 @@ def test_symlink_alias_cannot_reach_a_plan_without_a_grant():
         assert tm.read("alice-only.json") == before
 
 
+def test_symlink_leaving_the_folder_is_never_reachable():
+    async def body(env):
+        async with env.client("alice") as c:     # alice has editor on every name, so only the link check stops her
+            return {"get": await call(c, "bep_get_plan", plan="outside.json"),
+                    "set": await call(c, "bep_set_value", plan="outside.json", path="project.name", value="X"),
+                    "doc": await call(c, "bep_save_document", plan="clinic.json", document="plan_md",
+                                      file_name="outside.md"),
+                    "resource": await read_res(c, "bep://plans/outside.json"),
+                    "list": await call(c, "bep_list_plans")}
+    with Team() as tm:
+        if not tm.has_links:
+            print("  (symlink test skipped: this system doesn't allow symlinks)")
+            return
+        before = (tm.root / "outside-target.json").read_bytes()
+        out = serve(tm, body)
+        for k in ("get", "set"):
+            assert out[k][0] and "access" in plain(out[k][1]) and SENTINEL not in str(out[k][1]), (k, out[k])
+        assert out["resource"][0] is False and SENTINEL not in out["resource"][1]
+        assert "outside.json" not in [p["plan"] for p in out["list"][1]["plans"]]
+        assert (tm.root / "outside-target.json").read_bytes() == before
+        assert out["doc"][0] and "access" in plain(out["doc"][1]), out["doc"]   # outside.md counts as outside.json
+        assert not (tm.plans / "outside.md").exists()
+
+
 def test_viewer_can_read_but_not_write():
     async def body(env):
         out = {}
@@ -588,6 +615,8 @@ def test_versions_and_if_version():
                                       value="Fresh write", if_version=old)
             out["again"] = await call(c, "bep_set_value", plan="clinic.json", path="project.name",
                                       value="Second write with the old version", if_version=old)
+            out["empty"] = await call(c, "bep_set_value", plan="clinic.json", path="project.name",
+                                      value="Empty if_version", if_version="")      # same as no check
             out["no check"] = await call(c, "bep_set_value", plan="clinic.json", path="project.name",
                                          value="Unchecked write")
             out["stale row"] = await call(c, "bep_add_row", plan="clinic.json", list="team",
@@ -607,6 +636,7 @@ def test_versions_and_if_version():
         assert out["stale"][0] and "changed since you read it" in str(out["stale"][1]), out["stale"]
         assert out["bytes_after_stale"] == out["bytes_before"]                  # nothing written
         assert not out["fresh"][0] and out["fresh"][1]["version"] != v0
+        assert not out["empty"][0], out["empty"]
         assert json.loads(tm.read("clinic.json"))["project"]["name"] == "Unchecked write"
         assert out["fresh"][1]["version"] != out["no check"][1]["version"]
         assert out["no check"][1]["version"] == tm.version("clinic.json")      # the version after the write

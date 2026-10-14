@@ -29,7 +29,7 @@ python tests/test_mcp.py
 python tests/test_mcp_team.py
 ```
 
-You should see 16 `PASS` lines, then 11 more, then 20 more, and no `skipped`. In a Codespace or dev container, all of this is already installed.
+You should see 16 `PASS` lines, then 11 more, then 21 more, and no `skipped`. In a Codespace or dev container, all of this is already installed.
 
 ## Run one test
 

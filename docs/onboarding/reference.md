@@ -196,7 +196,7 @@ Tests that need Node or openpyxl print `(skipped: ...)` and **pass** when the to
 | `test_start_bep_prompt` | `start_bep` starts or resumes a plan, rejects bad names and agencies, and only names tools, list fields and plan keys that exist. |
 | `test_server_needs_a_plans_folder` | The server refuses to start without a valid `BEP_PLANS_DIR`. |
 
-`python tests/test_mcp_team.py` runs the team server's 20 tests, in-process over HTTP (no network). Same requirements and `skipped` behaviour as above.
+`python tests/test_mcp_team.py` runs the team server's 21 tests, in-process over HTTP (no network). Same requirements and `skipped` behaviour as above.
 
 | Test | Guards |
 |---|---|
@@ -212,6 +212,7 @@ Tests that need Node or openpyxl print `(skipped: ...)` and **pass** when the to
 | `test_leak_check_plan_content_not_returned_for_denied_plan` | The same sentinel check, across every tool on the ungranted plan. |
 | `test_list_plans_is_filtered_and_has_roles` | `bep_list_plans` shows only plans the user can use, with `role` and `version`, and no `plans_dir`. |
 | `test_symlink_alias_cannot_reach_a_plan_without_a_grant` | A link to a plan the user has no grant on gives no access and isn't listed (skipped where symlinks aren't allowed). |
+| `test_symlink_leaving_the_folder_is_never_reachable` | A link that points outside the plans folder can't be read, written, used as a document name or listed, even for an editor of every name (skipped where symlinks aren't allowed). |
 | `test_viewer_can_read_but_not_write` | A viewer can use every read surface; each write tool and `start_bep` is refused, and the file is unchanged. |
 | `test_editor_can_use_every_write_tool` | An editor can use every write tool, and each returns a `version`; without a grant, `bep_create_plan` is refused. |
 | `test_save_document_needs_editor_on_the_output_name_too` | `bep_save_document` also needs editor on the plan its file name stands for; nothing is written when it is refused. |

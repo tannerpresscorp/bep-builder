@@ -62,6 +62,9 @@ def load_config(path):
     url = data.get("public_url")
     if not isinstance(url, str) or not re.fullmatch(r"https?://[^/\s]+(/\S*)?", url):
         raise ValueError("team config needs 'public_url', e.g. \"https://bep.example.com\"")
+    if url.rstrip("/").endswith("/mcp"):
+        raise ValueError("team config 'public_url' is the site address without /mcp, "
+                         "e.g. \"https://bep.example.com\"; the server adds /mcp")
     lists = {}
     for key in ("allowed_hosts", "allowed_origins"):
         v = data.get(key, [])
