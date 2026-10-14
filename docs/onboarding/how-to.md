@@ -26,9 +26,10 @@ python -m pip install openpyxl defusedxml "mcp>=2,<3"
 node --version          # any recent Node; CI uses 20
 python tests/test_bep.py
 python tests/test_mcp.py
+python tests/test_mcp_team.py
 ```
 
-You should see 16 `PASS` lines, then 11 more, and no `skipped`. In a Codespace or dev container, all of this is already installed.
+You should see 16 `PASS` lines, then 11 more, then 20 more, and no `skipped`. In a Codespace or dev container, all of this is already installed.
 
 ## Run one test
 
@@ -154,10 +155,23 @@ claude mcp add bep -e BEP_PLANS_DIR="$HOME/plans" -- bep_mcp
 
 Then, in Claude Code, ask for something like "create an example plan called demo.json and list its TODOs", or run `/mcp__bep__start_bep` to be interviewed for a new plan. The server logs one line per tool call to stderr.
 
+### Run it as a team server
+
+To try the shared mode on your machine, make a token and a config **outside** the plans folder, then start the HTTP server (it listens on `127.0.0.1:8765`, endpoint `/mcp`):
+
+```bash
+bep_mcp --new-token                  # prints a token and its sha256; keep the token, put only the hash in the config
+# write ~/bep-team.json as in servers/bep_mcp/README.md (Team server), with "public_url": "http://127.0.0.1:8765"
+BEP_PLANS_DIR=$HOME/plans bep_mcp --http --config ~/bep-team.json
+claude mcp add --transport http bep-team http://127.0.0.1:8765/mcp --header "Authorization: Bearer <token>"
+```
+
+For a real team, run it behind an HTTPS proxy as one process; the README has the config, grants and claude.ai steps.
+
 ## Add or change an MCP tool
 
 1. If the tool needs new plan logic, add it to `bep.py` as a plain function that returns data and raises `ValueError` for bad input. Make the CLI command a thin wrapper around it, so both share one rule.
-2. Add the tool in `create_server()` in `servers/bep_mcp/bep_mcp/server.py`, with the `@_logged` decorator and the right annotation: `READ`, `EDIT` or `DESTRUCTIVE`. Take the plan as a file name and resolve it with `resolve_plan`; write through `_edit` so the change holds the write lock.
+2. Add the tool in `create_server()` in `servers/bep_mcp/bep_mcp/server.py`, with the `@guarded(...)` decorator (`"viewer"` for a tool that reads a plan, `"editor"` for one that changes it, `None` for one with no plan) and the right annotation: `READ`, `EDIT` or `DESTRUCTIVE`. Take the plan as a file name and resolve it with `resolve_plan`; write through `_edit` so the change holds the write lock, takes an optional `if_version` and returns the new `version`. A new resource or prompt must call `check_plan_name` and `authorize` before it loads anything.
 3. Name it `bep_<verb>_<noun>` and write the description for the model: what it does, what to call first, and what each argument accepts.
-4. In `tests/test_mcp.py`, add the tool to `test_tool_list_and_annotations` and compare its output with the matching CLI command. If you change what an existing tool returns, `test_eval_answers_match_the_fixtures` tells you whether an evaluation answer in `servers/bep_mcp/evals/evals.xml` has changed too.
+4. In `tests/test_mcp_team.py`, add the tool to the `TOOLS` table with the role it needs (the test `test_every_surface_has_a_rule` fails until you do), so the team tests check that someone without a grant is refused. In `tests/test_mcp.py`, add the tool to `test_tool_list_and_annotations` and compare its output with the matching CLI command. If you change what an existing tool returns, `test_eval_answers_match_the_fixtures` tells you whether an evaluation answer in `servers/bep_mcp/evals/evals.xml` has changed too.
 5. List it in `servers/bep_mcp/README.md` and in [reference.md](reference.md#mcp-server).

@@ -90,14 +90,15 @@ The **maps workbook** is the editable side of this model. `maps-workbook` writes
 
 ## The MCP server
 
-The server (`servers/bep_mcp/`, design in [docs/design/mcp-server.md](../design/mcp-server.md)) runs on the user's machine over stdio. It is a thin layer over `bep.py`:
+The server (`servers/bep_mcp/`, design in [docs/design/mcp-server.md](../design/mcp-server.md)) runs on the user's machine over stdio, or, with `--http`, as a shared team server. It is a thin layer over `bep.py`:
 
 - **No rules of its own.** Every CLI command that changes or checks a plan calls a plain function in `bep.py` that returns data and raises `ValueError`. The CLI prints the result or exits with the message; the server returns it as JSON or as an error the model can read and correct. A rule changed in `bep.py` changes both.
 - **One folder of plans.** Tools take a plan's file name, never a path. `resolve_plan` rejects names with folders and anything that resolves outside `BEP_PLANS_DIR`, symlinks included.
 - **One write at a time.** The SDK runs tool calls on threads, so every load → change → save holds one lock. Without it, two quick edits to the same plan could each load the old file and one would be lost.
+- **Team mode is decided when the server is built.** `create_server(plans_dir, team=config)` makes every plan-touching call need a signed-in user (a per-user bearer token, checked against hashes in a config file) with a `viewer` or `editor` grant on that plan. The checks run in one order on every tool, resource and prompt: name format, then role, then the file. Reads return a `version` (a hash of the file) and writes accept `if_version`, so two people can't silently overwrite each other. It must run as one process. See the [Team server](../design/mcp-server.md#8-team-server) section of the design and [servers/bep_mcp/README.md](../../servers/bep_mcp/README.md#team-server).
 - **Hints for the client.** Each tool says whether it is read-only or destructive (`bep_remove_row`, `bep_save_document`, `bep_create_plan` with `overwrite`), so a client can ask before running the risky ones.
 
-It needs Python 3.10 and the `mcp` package, unlike the CLI, which is why it lives in `servers/` rather than inside a skill. The folder is not called `mcp/`, because that name would hide the SDK's own `mcp` package on import.
+The plan JSON gets no new fields from any of this. It needs Python 3.10 and the `mcp` package, unlike the CLI, which is why it lives in `servers/` rather than inside a skill. The folder is not called `mcp/`, because that name would hide the SDK's own `mcp` package on import.
 
 ## Firm defaults
 

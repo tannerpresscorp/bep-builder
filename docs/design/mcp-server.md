@@ -1,6 +1,6 @@
 # Design: `bep_mcp`, an MCP server for bep-builder
 
-Status: **built.** All six steps of the [delivery plan](#6-delivery-plan) are done: `bep.py`'s plain functions, the server in `servers/bep_mcp/` with its read-only and write tools, its packaging and documentation, its evaluation questions, and the phase 2 resources and `start_bep` prompt.
+Status: **built.** All six steps of the [delivery plan](#6-delivery-plan) are done: `bep.py`'s plain functions, the server in `servers/bep_mcp/` with its read-only and write tools, its packaging and documentation, its evaluation questions, and the phase 2 resources and `start_bep` prompt. A [team server mode](#8-team-server) (HTTP, per-user tokens and grants) was added afterwards.
 
 **Changes from the original proposal, found while building:**
 - **Location:** the server lives in `servers/bep_mcp/`, not `mcp/bep_mcp/`. A top-level `mcp/` folder would shadow the `mcp` SDK package whenever Python runs from the repository root.
@@ -18,7 +18,9 @@ Status: **built.** All six steps of the [delivery plan](#6-delivery-plan) are do
 - draw the process map
 - export the plan
 
-It is a **local stdio server written in Python**. It imports `bep.py` and its helper modules in-process, and it reads and writes plan JSON files inside a single folder that the user configures. Phase 1 needs one small refactor in `bep.py`: moving four commands' logic out of their `cmd_*` print-and-exit wrappers into plain functions. Nothing else in the repository changes.
+It is a **local stdio server written in Python** (and, since the [team server](#8-team-server) was added, can also run over HTTP). It imports `bep.py` and its helper modules in-process, and it reads and writes plan JSON files inside a single folder that the user configures. Phase 1 needs one small refactor in `bep.py`: moving four commands' logic out of their `cmd_*` print-and-exit wrappers into plain functions. Nothing else in the repository changes.
+
+*A later addition, the [team server](#8-team-server), lets the same code run over HTTP for several people.*
 
 ## 1. Requirements
 
@@ -179,11 +181,11 @@ claude mcp add bep -e BEP_PLANS_DIR="$HOME/plans" -- bep_mcp
 |---|---|---|---|
 | Language | **Python** | TypeScript (mcp-builder's default) | All the logic is in Python. TypeScript would mean a third implementation, after Python and the app's JavaScript, and the repository already struggles to keep two in step. |
 | How to call the logic | **Import in-process** | Run `bep.py` as a subprocess per call | A subprocess would need no refactor, but costs ~50 ms per call, means parsing human-oriented stdout, and gives poorer errors. Importing gives structured data and exact messages; its cost is the small refactor in §3.2, which also improves the CLI. |
-| Transport | **stdio** | Streamable HTTP | One local user, and no auth or network exposure to design. HTTP is only worth it for a shared team server (see Revisit later). |
+| Transport | **stdio**, plus streamable HTTP for a team server | HTTP only | One local user needs no auth or network exposure, so stdio stays the default. HTTP is added as a separate mode (`--http`) for a shared team server; see [Team server](#8-team-server). |
 | Where it lives | **`servers/bep_mcp/`** | Inside `skills/bep-builder-cli/` | Keeps the stdlib-only promise of the CLI skill, and the skill folders independently installable. |
 | Plan addressing | **File name in one folder** | Absolute paths | The sandbox removes a whole class of path-traversal bugs. Users with plans in several folders run one server per folder. |
 | Tool granularity | **One tool per operation (16)** | One generic `bep_run(command, args)` | Typed schemas and per-tool annotations let clients ask before destructive calls (`bep_remove_row`, `bep_create_plan` with overwrite) and let the model pick tools by description. |
-| Concurrent edits | **Last write wins** | Version check (refuse when the file changed since it was read) | Single user. A version field would change the plan format that the app and CLI share. Revisit if it becomes a team server. |
+| Concurrent edits | **Write lock, plus an optional `if_version` check** | Last write wins only; a version field in the plan file | The lock stops the server racing itself. For several people, reads return a `version` (a hash of the file) and writes may pass it back as `if_version`; omitting it keeps last-write-wins. The hash is computed, not stored, so the plan format is unchanged. See [Team server](#8-team-server). |
 | Maps workbook | **Left out of v1** | Return the `.xlsx` as a binary resource | The round trip needs a person in Excel or Numbers. The CLI already handles it well. |
 
 ## 6. Delivery plan
@@ -199,8 +201,54 @@ Each step is its own PR, and none changes the plan format, the web app or the sk
 
 ## 7. Revisit later
 
-- **A team server.** If several people should share plans through Claude, move to streamable HTTP. That needs OAuth, per-user authorization on plan files, binding to `127.0.0.1` or putting it behind a proxy, `Origin` checks, and a version check on writes.
+- **OAuth for the team server,** if static per-user tokens stop being enough (see [Team server](#8-team-server)).
 - **The web app's shared store.** Plans saved in the Claude artifact (`bep/plan`) are invisible to this server. Exposing them would mean reading and writing that store through the artifact data API rather than files. That decision depends on where the team keeps its plans of record.
 - **Richer tool results** suggested by the first evaluation run: give each `bep_list_todos` item the dotted path it refers to (e.g. `uses.4d.party`), and offer the process map as JSON (phases, use ids, exchange targets) as well as Mermaid.
 - **The maps workbook round trip,** once clients handle binary resources and file uploads reliably.
 - **Hosting skills next to MCP.** If the skills' scripts gain more shared code, consider one installable package (`bep_builder`) that the CLI, the skills and the MCP server all import. That would also remove the copied modules (`iso13567.py`, `read_tables.py`).
+
+## 8. Team server
+
+Status: **built.** `bep_mcp --http` serves the same tools, resources and prompt to several people over streamable HTTP. The stdio server is unchanged apart from two additive things (a `version` in results and an optional `if_version` argument), and the plan file format is unchanged.
+
+### 8.1 Goal and decisions
+
+Several people should share one folder of BIM Execution Plans through Claude, from Claude Code and from claude.ai. Decisions taken with the project owner:
+
+| Decision | Chosen | Alternatives considered | Why |
+|---|---|---|---|
+| Hosting | The server binds `127.0.0.1`; an HTTPS reverse proxy (Caddy, nginx, Cloudflare Tunnel) gives it a public address | Terminate TLS inside the server; bind `0.0.0.0` | Certificates, renewal and rate limiting are what proxies already do well. claude.ai connectors call from Anthropic's network, so the address must be public; localhost-only would not work for them. |
+| Clients | Claude Code and claude.ai custom connectors | Claude Code only | Both can send a fixed `Authorization` request header (`--header` in Claude Code; the "Request headers" field of a custom connector). |
+| Sign-in | **Per-user static bearer tokens**; the config stores only SHA-256 hashes | OAuth now; one shared token; mTLS | OAuth means running or delegating an authorization server, which is more than a small team needs today. One shared token can't say who did what or limit anyone. The SDK's token-verifier hook means OAuth can be added later without changing the tools: only the verifier changes. |
+| Authorization | Roles `viewer` / `editor` granted per user by file-name pattern | Per-folder grants; everyone sees everything | The server has one flat folder, so the unit is the plan file name. Patterns (`clinic*.json`) keep the config short. |
+| Plans of record | **Two stores, on purpose.** The team server's folder holds the plans of record for Claude, CLI and MCP work; the Claude artifact (`bep/plan`) stays a quick browser editor | One store (make the server read the artifact store, or retire the app's sharing) | The artifact store needs the artifact data API and isn't reachable from a server process; the folder works with the CLI and backups. Plans move between them as JSON (same format). Cost: they don't sync, and the docs say which is the record. |
+| Concurrency | **One server process.** A lock serialises writes; reads return `version` (first 16 hex of the SHA-256 of the file's bytes); writes take an optional `if_version`, and a mismatch is refused with nothing written | A cross-process file lock; a version field stored in the plan | Static tokens and a small team need one process, not a cluster. `if_version` also catches edits made with the CLI or an editor, which a lock can't. A stored version would change the plan format that the app and CLI share. A cross-process lock would need `fcntl` on POSIX and `msvcrt` on Windows, which CI covers, but a lock nobody needs is code to maintain. |
+| Transport safety | DNS-rebinding protection on, with `allowed_hosts` and `allowed_origins` from the config (plus localhost) | SDK default | The SDK's default for a `127.0.0.1` bind allows only localhost `Host` values, so behind a proxy the public host name would be refused (421). Bad `Host` gets 421; bad `Origin` gets 403. |
+| Audit | One log line per tool, resource and prompt call with the user and the outcome | Per-write history in the folder | stderr is enough for a small team and adds no files beside the plans. Tokens are never logged. |
+
+### 8.2 How it works
+
+```text
+ Claude Code / claude.ai ──HTTPS──▶ proxy ──HTTP, 127.0.0.1──▶ bep_mcp --http (one uvicorn process)
+        Authorization: Bearer <token>            │
+                                                 ├─ token verifier: sha256(token) vs every user's hash (constant time)
+                                                 ├─ Host / Origin checks
+                                                 └─ tools / resources / prompt ──▶ the same functions as stdio ──▶ plans folder
+```
+
+- **Mode is fixed when the server is built.** `create_server(plans_dir, team=None)` is the stdio server: no checks. `create_server(plans_dir, team=config)` is team mode: every call that touches a plan needs a signed-in user, and if the request somehow has none, it is refused with `Sign-in required.` Team mode can never fall back to full access.
+- **Token to user.** `TeamTokenVerifier` hashes the presented token and compares it with every user's hash using `hmac.compare_digest`, with no early exit, and never raises (an error means "not a valid token"). The SDK turns a miss into 401 with a `WWW-Authenticate` header. The user's name travels with the request and tools read it from the SDK's context, so it is per request even on a long-lived connection.
+- **Where `public_url` is used.** The SDK requires auth settings next to a verifier. `public_url` fills the advertised issuer and resource addresses; the server never contacts them. A token carries no audience, so audience validation is off.
+- **One rule on every surface.** Each tool, the `bep://plans/{plan}` resource and the `start_bep` prompt run the same three steps in order: check the name's format, check the user's role, and only then touch the file. No answer to a user without a role depends on whether the file exists: a missing plan and a plan they can't see give the same text, apart from the plan name they typed. `bep_list_plans` shows only plans the user can use, with their `role`, and omits `plans_dir`; in team mode no response names the server's folder.
+- **Roles.** `viewer` for reads (`bep_get_plan`, `bep_get_status`, `bep_list_todos`, `bep_convert_layers`, `bep_get_process_map`, `bep_export_plan`, `bep_get_layer_definition`, `bep_check_names` with a plan, the resource). `editor` for writes (`bep_create_plan`, `bep_set_value`, `bep_add_row`, `bep_remove_row`, `bep_set_bim_use`, `bep_set_qc`, `bep_save_document`) and for `start_bep`, since it ends by creating or filling a plan. `bep_save_document` needs editor on the source plan and on the plan the output is named after, so a document can't be written over another plan's name. `bep_get_catalog` and `bep://catalog` need only a valid token. The highest matching grant wins.
+- **Links inside the folder.** The role for `alias.json` is lowered to the role for the file it really is, so a link can't open a plan its owner has no grant on, and `bep_list_plans` leaves such links out.
+- **Config safety.** The config holds the token hashes, so the server refuses to start if the file sits in the plans folder. It is read once at start-up: revoke a token by removing the user's entry and restarting.
+- **Versions.** The server reads a plan's bytes once and derives both the plan and its version from them, so the version always describes what was read. Writes re-check it under the lock, right after loading.
+
+### 8.3 What is not covered
+
+- **No OAuth.** Anyone with a token acts as its user until the config changes and the server restarts. Tokens are bearer secrets, so they need the same care as a password; give each person their own so one can be revoked alone.
+- **claude.ai with a static header.** The connector form's request-header field is what this design relies on. It is unverified against a live claude.ai connector (the server advertises OAuth metadata for the SDK's sake; a client that ignores it and sends the header is what works).
+- **Several processes.** Not supported. The in-process lock and the "one process saw every write" assumption behind `if_version` would not hold. Run exactly one.
+- **Syncing with the web app's store.** The two stores don't sync (see Plans of record above).
+- **Rate limiting and TLS** belong to the proxy.
