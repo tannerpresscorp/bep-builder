@@ -77,7 +77,7 @@ $B export $T/plan.json -o $T/plan.md
 ## Test
 
 ```bash
-python tests/test_bep.py    # 15 PASS; the app halves need node on PATH
+python tests/test_bep.py    # 16 PASS; the app halves need node on PATH
 python tests/test_mcp.py    # 11 PASS; needs the mcp package (run with /tmp/bep-venv/bin/python if it isn't global)
 ```
 
@@ -87,7 +87,6 @@ python tests/test_mcp.py    # 11 PASS; needs the mcp package (run with /tmp/bep-
 - **The app saves to `localStorage` outside Claude**, and a banner says so. Each driver run gets a fresh browser profile, so it always starts empty. In a reused browser, "Load example project" asks for confirmation first; the driver handles both cases.
 - **The toast "Example project loaded" stays on screen for a moment** and covers the bottom of the screenshots. It's harmless.
 - **`bep_set_bim_use` takes `use_id`, not `id`.** Passing `id` returns a pydantic "Field required … use_id" error.
-- **`bep.py` with a plan file that doesn't exist prints a raw `FileNotFoundError` traceback**, for example `export plan.md` when you meant `export plan.json -o plan.md`. Check the argument order.
 - **Blanking `project.cui` adds a TODO only on USACE plans.** The example plan is VA, so `validate --strict` still exits 0 after `set … project.cui ""`.
 
 ## Troubleshooting
