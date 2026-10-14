@@ -1,6 +1,6 @@
 # Tutorial: your first hour with bep-builder
 
-In this tutorial you'll run the tests, build a plan with the command-line tool, open the same plan in the web app, and watch the test suite catch a deliberate mistake. By the end you'll have touched every part of the repository.
+In this tutorial you'll run the tests, build a plan with the command-line tool, open the same plan in the web app, and watch the test suite catch a deliberate mistake. By the end you'll have touched the main parts of the repository; the MCP server has its own guide ([smoke-test it](how-to.md#smoke-test-a-change-in-the-real-app)).
 
 You need **git**, **Python 3.8 or newer** and, ideally, **Node.js** (any recent version). If you open the repository in a GitHub Codespace, all of this is already set up, and you can skip the install command in step 1. Commands run from the repository root unless a step says otherwise. Run them in order, in one terminal.
 

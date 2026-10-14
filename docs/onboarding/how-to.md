@@ -61,7 +61,7 @@ Run this way, the app shows "Shared saving isn't available here" with a button, 
 
 The tests never open a browser. To see a change working in the web app and the MCP server, use the repository's run skill, `.claude/skills/run-bep-builder/` (a project skill for this repo's sessions, not one of the installable `skills/*`). Read its `SKILL.md` first: it lists the prerequisites (Node with the `playwright` package, and a Chromium) and the gotchas.
 
-With the `_site/` server from the previous section running, drive the web app:
+With the `_site/` server from the previous section still running in another terminal, drive the web app:
 
 ```bash
 node .claude/skills/run-bep-builder/web.cjs
@@ -77,7 +77,7 @@ python3 -m venv /tmp/bep-venv
 /tmp/bep-venv/bin/python .claude/skills/run-bep-builder/mcp_drive.py /tmp/bep-venv/bin/bep_mcp 2>/dev/null
 ```
 
-Each step prints `ok` or `FAIL`, and the exit code is 1 if any step failed. The driver leaves the temporary plans folder it prints (`plans folder: ...`) behind; delete it when you're done, along with the virtual environment, `_site/` and the screenshots. Stop the server with `lsof -ti:8000 -sTCP:LISTEN | xargs -r kill`.
+Each step prints `ok` or `FAIL`, and the exit code is 1 if any step failed. The driver leaves the temporary plans folder it prints (`plans folder: ...`) behind; delete it when you're done, along with the virtual environment, `_site/` and the screenshots. Stop the web server with Ctrl+C in its terminal.
 
 ## Change logic that exists in both Python and JavaScript
 

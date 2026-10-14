@@ -33,7 +33,7 @@ flowchart TB
 - **The skills** tell Claude when and how to use the CLI and the reference material, for example "check these layer names" or "start a BEP for our barracks project".
 - **The MCP server** gives Claude, or any MCP client, the CLI's operations as typed tools instead of shell commands. It imports `bep.py` rather than re-implementing it, so it can't drift from the CLI the way the app could.
 
-All of them read and write the same **plan JSON** (fields in [reference.md](reference.md#plan-json)). That shared format is the most important thing to keep stable. A plan exported from the app can be validated with the CLI, and a plan built with the CLI loads in the app. `normalize()` exists on both sides so that plans saved by an older version, which lack newer fields, still load.
+All of them read and write the same **plan JSON** (fields in [reference.md](reference.md#plan-json)). That shared format is the most important thing to keep stable. `bep.py` reads the document the app stores as a Claude artifact as is, and the app's `normalize()` accepts a plan the CLI wrote. The app's own screens have no plan-JSON import or export, though: its downloads are the plan as Markdown or HTML and the layer definition file. `normalize()` exists on both sides so that plans saved by an older version, which lack newer fields, still load.
 
 ## Why the web app is a single file
 
@@ -78,7 +78,7 @@ At start-up, `boot()` looks for `window.claude`, the runtime a Claude artifact p
 
 So the same file serves both cases with no configuration. It does mean that on GitHub Pages the data never leaves the user's browser.
 
-**Two stores, not synced.** The shared artifact's `bep/plan` document and the team server's `*.json` files in `BEP_PLANS_DIR` hold plans in the same format, but they are separate stores. Nothing syncs them and there is no import step: the app downloads only Markdown and HTML, and the server has no tool that accepts plan JSON. Don't edit the same plan in both. See [Where plans live](../../servers/bep_mcp/README.md#where-plans-live) in the server README.
+**Two stores, not synced.** The shared artifact's `bep/plan` document and the team server's `*.json` files in `BEP_PLANS_DIR` hold plans in the same format, but they are separate stores. Nothing syncs them and there is no import step: the app's screens have no plan-JSON import or export, and the server has no tool that accepts plan JSON. Don't edit the same plan in both. See [Where plans live](../../servers/bep_mcp/README.md#where-plans-live) in the server README.
 
 ## The process map model
 
