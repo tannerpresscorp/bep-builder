@@ -58,7 +58,7 @@ A change to any of these must be made in both languages. The tests check the two
 **How the web app saves.** At start-up, the app checks whether it is running as a Claude artifact (`window.claude`):
 - As an artifact, it saves to a shared store document named `bep/plan` and syncs with teammates through `onSnapshot`. Read-only viewers can't edit.
 - Shared saves write only the fields that changed, with the store's `update()` (nested objects merge; arrays replace, so an edit inside a list row saves that list). Load example, Clear plan and a missing document use a whole-plan `set()`. `buildPatch`, `overlayEdits` and `flush` in the Saving section hold this logic, and `test_app_shared_save_keeps_teammates_changes` covers it.
-- Anywhere else it falls back to `localStorage` (key `bep-builder-plan`), and the page shows a banner saying it saves in this browser only.
+- Anywhere else it falls back to `localStorage` (key `bep-builder-plan`), and the page shows a banner saying it saves in this browser only, with a link to the team's shared artifact (`HELP.shared`).
 
 **MCP server.** `servers/bep_mcp/bep_mcp/server.py` holds no plan rules of its own: each tool calls a plain function in `bep.py` (`set_path`, `add_row`, `remove_row`, `set_use`, `set_qc`, `check_names`, `convert_layers`, `layer_definition`, `build_doc`), and the `cmd_*` functions wrap the same ones. Put new plan logic in `bep.py` as a function that returns data and raises `ValueError`, then call it from both. Tools name plans by file name only, and `resolve_plan` keeps them inside `BEP_PLANS_DIR`. Writes go through `_edit`, which holds `WRITE_LOCK`. `tests/test_mcp.py` checks every tool against the matching CLI command, byte for byte.
 
