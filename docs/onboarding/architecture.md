@@ -72,7 +72,7 @@ A Claude skill is installed as a self-contained folder, so a skill can't import 
 At start-up, `boot()` looks for `window.claude`, the runtime a Claude artifact page is given:
 
 - **As a Claude artifact,** the plan lives in a shared store document named `bep/plan`. About a second after typing stops, the app saves **only the fields that changed**, using the store's `update()`. Nested objects merge, but lists are replaced whole, so an edit inside a team or exchange row saves that one list. Two people editing different fields therefore don't overwrite each other. Loading the example, clearing the plan or creating a new store document writes the whole plan with `set()` instead. `onSnapshot` brings teammates' changes in live, with any edits this browser hasn't saved yet laid back on top (`overlayEdits`). If someone else saves while you're typing, the app shows a "Load their changes" banner instead of overwriting your input. Viewers without write access get a read-only page. If the shared store drops out, the app switches to saving in the browser.
-- **Anywhere else** (GitHub Pages, a local server), the plan is saved to the browser's `localStorage` under `bep-builder-plan`. A banner explains that the plan is saved in this browser only and should be exported to keep a copy.
+- **Anywhere else** (GitHub Pages, a local server), the plan is saved to the browser's `localStorage` under `bep-builder-plan`. A banner explains that the plan is saved in this browser only and should be exported to keep a copy, and links to the team's shared copy (the artifact at `HELP.shared` in the app's reference data).
 
 So the same file serves both cases with no configuration. It does mean that on GitHub Pages the data never leaves the user's browser.
 

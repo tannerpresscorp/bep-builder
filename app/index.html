@@ -104,6 +104,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: .75; cursor: not-a
 .btn.small { padding: 7px 10px; font-size: 11.5px; }
 .btn.ghost { border-color: var(--line-strong); }
 .btn.danger { border-color: var(--redline); color: var(--redline); }
+a.btn { display: inline-block; text-decoration: none; }
 .icon-btn { border: 0; background: none; color: var(--muted); cursor: pointer; font: 500 18px/1 var(--body); padding: 6px 8px; }
 .icon-btn:hover { color: var(--redline); }
 .row-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
@@ -221,7 +222,9 @@ const HELP = {
   gsa: "https://www.gsa.gov/real-estate/facilities-standards-for-the-public-buildings-service",
   ffc: "https://www.wbdg.org/ffc",
   ncs: "https://nibs.org/projects/united-states-national-cad-standard-ncs/",
-  psu: "https://psu.pb.unizin.org/bimprojectexecutionplanning/"
+  psu: "https://psu.pb.unizin.org/bimprojectexecutionplanning/",
+  // The team's shared copy: this page published as a Claude artifact, saving to one plan for everyone it's shared with.
+  shared: "https://claude.ai/artifact/WnzUc4iPyw4jNjWvkk1Vdy"
 };
 
 const STEPS = [
@@ -1156,7 +1159,7 @@ async function renderEdited() {
 function renderBanner() {
   const b = $("#banner");
   if (pendingRemote) { b.className = "banner"; b.innerHTML = `<span>A teammate updated the plan while you were typing.</span><button class="btn small" data-action="load-remote">Load their changes</button>`; b.hidden = false; return; }
-  if (mode === "local") { b.className = "banner alert"; b.innerHTML = `<span>Shared saving isn't available here, so this plan is saved in this browser only. Export it from Review &amp; export to keep a copy.</span>`; b.hidden = false; return; }
+  if (mode === "local") { b.className = "banner alert"; b.innerHTML = `<span>Shared saving isn't available here, so this plan is saved in this browser only. Export it from Review &amp; export to keep a copy.</span><a class="btn small" href="${HELP.shared}" target="_blank" rel="noopener">Open the shared team plan</a>`; b.hidden = false; return; }
   if (mode === "readonly") { b.className = "banner"; b.innerHTML = `<span>You can view this plan. Ask the owner for edit access to make changes.</span>`; b.hidden = false; return; }
   b.hidden = true;
 }
