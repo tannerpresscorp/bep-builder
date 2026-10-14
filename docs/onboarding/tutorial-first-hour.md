@@ -31,6 +31,7 @@ PASS test_examples_in_sync
 PASS test_maps_workbook_round_trip
 PASS test_app_matches_cli
 PASS test_set_refuses_sections_and_keeps_file_valid
+PASS test_bad_plan_files_give_one_line_errors
 PASS test_partial_rows_are_filled_from_templates
 PASS test_maps_workbook_writes_plan_text_as_text
 PASS test_app_downloads_without_the_claude_capability
@@ -40,7 +41,7 @@ PASS test_pages_build_is_a_full_document
 PASS test_plan_operations_are_plain_functions
 ```
 
-That's 15 tests. If a line ends in `(skipped: Node.js not installed)`, the test passed without running its JavaScript half. Install Node to see it run for real.
+That's 16 tests. If a line ends in `(skipped: Node.js not installed)`, the test passed without running its JavaScript half. Install Node to see it run for real.
 
 ## 3. Build a plan with the CLI
 
