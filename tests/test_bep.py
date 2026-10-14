@@ -229,6 +229,39 @@ def test_set_refuses_sections_and_keeps_file_valid():
         shutil.rmtree(d)
 
 
+def test_bad_plan_files_give_one_line_errors():
+    """A missing, broken or wrong-kind plan file, or a missing folder, is a message, not a traceback."""
+    d = Path(tempfile.mkdtemp())
+    try:
+        (d / "broken.json").write_text("{broken", encoding="utf-8")
+        (d / "array.json").write_text("[1, 2]", encoding="utf-8")
+        (d / "app-doc.json").write_text('{"plan": 3}', encoding="utf-8")
+        (d / "binary.json").write_bytes(b"\xff\xfe\x00")
+        (d / "folder.json").mkdir()
+        assert bep("init", d / "ok.json")[0] == 0
+        cases = [
+            (("status", d / "missing.json"), "No plan file at"),
+            (("export", d / "missing.json"), "No plan file at"),
+            (("set", d / "missing.json", "project.name", "X"), "No plan file at"),
+            (("check-names", "--plan", d / "missing.json", "A-WALL"), "No plan file at"),
+            (("status", d / "broken.json"), "isn't valid JSON (line 1, column 2"),
+            (("status", d / "array.json"), "holds an array"),
+            (("status", d / "app-doc.json"), "holds a number"),
+            (("status", d / "binary.json"), "isn't a text file in UTF-8"),
+            (("status", d / "folder.json"), "is a folder, not a plan file"),
+            (("init", d / "no-folder" / "new.json"), "No such folder"),
+            (("export", d / "ok.json", "-o", d / "no-folder" / "plan.md"), "plan.md"),
+            (("check-names", "--file", d / "missing.txt"), "missing.txt"),
+        ]
+        for args, expected in cases:
+            code, out = bep(*args)
+            assert code == 1 and expected in out and "Traceback" not in out, (args, out)
+        assert sorted(f.name for f in d.iterdir()) == sorted(
+            ["broken.json", "array.json", "app-doc.json", "binary.json", "folder.json", "ok.json"])
+    finally:
+        shutil.rmtree(d)
+
+
 def test_partial_rows_are_filled_from_templates():
     sys.path.insert(0, str(CLI))
     import bep as cli

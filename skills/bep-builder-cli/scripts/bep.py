@@ -35,6 +35,7 @@ Commands
 import argparse
 import copy
 import datetime as _dt
+import errno
 import html
 import json
 import os
@@ -261,13 +262,29 @@ def normalize(p):
     return plan
 
 
+class PlanFileError(ValueError):
+    """A plan file that is missing or isn't a plan. The message is written for people."""
+
+
 def load(path):
-    with open(path, encoding="utf-8") as fh:
-        data = json.load(fh)
+    if os.path.isdir(path):   # checked first: on Windows, opening a folder raises PermissionError
+        raise PlanFileError(f"{path} is a folder, not a plan file.")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except FileNotFoundError:
+        raise PlanFileError(f"No plan file at {path}. Create one with: bep.py init {path}") from None
+    except json.JSONDecodeError as e:
+        raise PlanFileError(f"{path} isn't valid JSON (line {e.lineno}, column {e.colno}: {e.msg}).") from None
+    except UnicodeDecodeError:
+        raise PlanFileError(f"{path} isn't a text file in UTF-8, so it can't be a plan.") from None
     # Accept the web app's stored document ({"plan": {...}, "updatedBy": ..., ...})
     if isinstance(data, dict) and "plan" in data and "project" not in data:
         data = data["plan"]
-    std = data.get("standards") if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        kind = {list: "an array", str: "a string", bool: "true or false", type(None): "null"}.get(type(data), "a number")
+        raise PlanFileError(f"{path} isn't a plan: it holds {kind}, not a JSON object.")
+    std = data.get("standards")
     if isinstance(std, dict) and "statusField" not in std and std.get("status") is False:
         std["statusField"] = "none"   # older plans stored only an on/off flag
     plan = normalize(data)
@@ -283,6 +300,8 @@ def save(path, plan):
         # os.replace would swap out a read-only plan; refuse, as writing in place would
         raise PermissionError(f"{path} is read-only")
     folder = os.path.dirname(path)
+    if not os.path.isdir(folder):   # else mkstemp's error names its temporary file, not the plan
+        raise FileNotFoundError(errno.ENOENT, "No such folder", folder)
     fd, tmp = tempfile.mkstemp(prefix=".bep-", suffix=".json", dir=folder)
     try:
         # mkstemp creates the file owner-only (0600); keep the plan's existing permissions,
@@ -1214,8 +1233,12 @@ def main(argv=None):
     a = ap.parse_args(argv)
     try:
         a.fn(a)
+    except PlanFileError as e:
+        sys.exit(str(e))
     except PermissionError as e:
         sys.exit(f"Permission denied: {e}")
+    except OSError as e:   # e.g. a missing output folder or input spreadsheet: one line, not a traceback
+        sys.exit(f"{e.strerror}: {e.filename}" if e.filename else str(e))
 
 
 if __name__ == "__main__":
