@@ -22,5 +22,7 @@ jobs:
       - run: python tests/test_bep.py
       - name: MCP server tests
         run: python tests/test_mcp.py
+      - name: MCP team server tests
+        run: python tests/test_mcp_team.py
       - name: Example plan exports
         run: python skills/bep-builder-cli/scripts/bep.py export examples/example-plan.json -o "${{ runner.temp }}/example.md"

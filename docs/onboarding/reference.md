@@ -26,10 +26,11 @@ Facts about the repository, to look up rather than read through. For *why* thing
 | `skills/*/SKILL.md` | The skill's instructions. Its YAML front matter (`name`, `description`) is what Claude reads to decide when to use the skill. |
 | `skills/*/evals/evals.json` | Example prompts, each with the output expected (`id`, `prompt`, `expected_output`, `files`), for evaluating the skill. No test in this repo runs them. |
 | `examples/example-plan.json` | A complete example plan (11 of 11 sections, 0 TODOs). |
-| `servers/bep_mcp/` | The MCP server: `bep_mcp/server.py`, its `pyproject.toml` (package `bep-mcp`, command `bep_mcp`), a README listing the tools, and `evals/` (10 evaluation questions with two fixture plans). |
+| `servers/bep_mcp/` | The MCP server: `bep_mcp/server.py`, `bep_mcp/team.py` (team config, tokens and grants), its `pyproject.toml` (package `bep-mcp`, command `bep_mcp`), a README listing the tools, and `evals/` (10 evaluation questions with two fixture plans). |
 | `docs/design/` | Design proposals, such as `mcp-server.md`. |
 | `tests/test_bep.py` | The main test suite. |
 | `tests/test_mcp.py` | The MCP server's tests. |
+| `tests/test_mcp_team.py` | The team server's tests (HTTP, tokens, grants, versions, audit log). |
 | `.github/workflows/` | `ci.yml` (tests on Linux and Windows), `pages.yml` (deploys the app) and `copilot-setup-steps.yml` (environment for GitHub Copilot's coding agent). |
 | `.github/dependabot.yml` | Keeps the GitHub Actions versions up to date. |
 | `.devcontainer/devcontainer.json` | Codespaces / dev container: Python 3.12, Node 20, openpyxl, defusedxml and `mcp`, port 8000 forwarded. |
@@ -195,6 +196,32 @@ Tests that need Node or openpyxl print `(skipped: ...)` and **pass** when the to
 | `test_start_bep_prompt` | `start_bep` starts or resumes a plan, rejects bad names and agencies, and only names tools, list fields and plan keys that exist. |
 | `test_server_needs_a_plans_folder` | The server refuses to start without a valid `BEP_PLANS_DIR`. |
 
+`python tests/test_mcp_team.py` runs the team server's 21 tests, in-process over HTTP (no network). Same requirements and `skipped` behaviour as above.
+
+| Test | Guards |
+|---|---|
+| `test_every_surface_has_a_rule` | Every tool, resource, resource template and prompt the server lists has an entry in the test's access table, and the table has no stale entries. |
+| `test_no_token_or_bad_token_is_401` | No token, a wrong token, an empty one, a non-Bearer one and a token's hash all get 401; the real token gets 200. |
+| `test_bad_host_is_421_and_bad_origin_is_403` | A `Host` or `Origin` outside the config is refused (421, 403); good and localhost ones pass. |
+| `test_verifier_and_roles` | The token verifier never raises or matches wrongly; `role_for` ignores case, takes the highest grant and doesn't depend on files. |
+| `test_config_stores_only_hashes_and_is_checked` | The config holds hashes only, and bad configs are refused with a message. |
+| `test_fail_closed_without_a_token` | A team-mode server with no signed-in user refuses every tool, resource and prompt ("Sign-in required"). |
+| `test_plan_names_are_checked_before_roles_and_existence` | A malformed plan name gets the format error, not an access message. |
+| `test_user_cannot_read_a_plan_they_have_no_grant_on` | For every tool, the resource and `start_bep`, an ungranted plan and a missing plan get the same denial. |
+| `test_leak_check_sentinel_and_folder_path` | A sentinel inside an ungranted plan never appears in any answer; no answer contains the server's folder path. |
+| `test_leak_check_plan_content_not_returned_for_denied_plan` | The same sentinel check, across every tool on the ungranted plan. |
+| `test_list_plans_is_filtered_and_has_roles` | `bep_list_plans` shows only plans the user can use, with `role` and `version`, and no `plans_dir`. |
+| `test_symlink_alias_cannot_reach_a_plan_without_a_grant` | A link to a plan the user has no grant on gives no access and isn't listed (skipped where symlinks aren't allowed). |
+| `test_symlink_leaving_the_folder_is_never_reachable` | A link that points outside the plans folder can't be read, written, used as a document name or listed, even for an editor of every name (skipped where symlinks aren't allowed). |
+| `test_viewer_can_read_but_not_write` | A viewer can use every read surface; each write tool and `start_bep` is refused, and the file is unchanged. |
+| `test_editor_can_use_every_write_tool` | An editor can use every write tool, and each returns a `version`; without a grant, `bep_create_plan` is refused. |
+| `test_save_document_needs_editor_on_the_output_name_too` | `bep_save_document` also needs editor on the plan its file name stands for; nothing is written when it is refused. |
+| `test_versions_and_if_version` | A stale `if_version` is refused for every write tool and leaves the file byte-identical; a current one is accepted. |
+| `test_stdio_mode_unchanged_apart_from_versions` | Local mode has no checks and still reports `plans_dir`, and has `version` and `if_version` too. |
+| `test_audit_log_has_user_and_outcome_and_never_a_token` | Each call logs `user=… kind=… name=… plan=… ok/denied/error`; no token or hash appears. |
+| `test_new_token_prints_a_token_and_its_hash` | `bep_mcp --new-token` prints a token and its SHA-256. |
+| `test_http_refuses_to_start_on_a_bad_setup` | `--http` exits 1 with a message for a missing or empty config, a missing `BEP_PLANS_DIR`, or a config inside the plans folder. |
+
 ## MCP server
 
 Install with `python -m pip install -e servers/bep_mcp` (editable, from inside the repository, so it finds `bep.py`), then register it with a client, for example `claude mcp add bep -e BEP_PLANS_DIR="$HOME/plans" -- bep_mcp`.
@@ -202,6 +229,7 @@ Install with `python -m pip install -e servers/bep_mcp` (editable, from inside t
 | Setting | Meaning |
 |---|---|
 | `BEP_PLANS_DIR` | Required. The folder whose `*.json` files are the plans the tools can see. |
+| `BEP_TEAM_CONFIG` | Optional. The team config file for `--http`, if `--config` isn't given. |
 | `BEP_CLI_DIR` | Optional. The folder holding `bep.py`, if not this repository's `skills/bep-builder-cli/scripts/`. |
 
 | Tool | CLI equivalent | Kind |
@@ -226,13 +254,15 @@ Install with `python -m pip install -e servers/bep_mcp` (editable, from inside t
 
 It also offers two resources, `bep://catalog` and `bep://plans/{plan}`, and the `start_bep` prompt, which walks the model through a new plan section by section (see the server's README).
 
-The server logs one line per tool call to stderr; stdout carries the protocol.
+Command line: `bep_mcp` (stdio), `bep_mcp --http --config PATH [--host 127.0.0.1] [--port 8765]` (team server, endpoint `/mcp`, one process) and `bep_mcp --new-token` (prints a token and its SHA-256). The team config, grants, `if_version` and the connection steps for Claude Code and claude.ai are in [servers/bep_mcp/README.md](../../servers/bep_mcp/README.md#team-server).
+
+The server logs one line per tool, resource and prompt call to stderr (`user=… kind=… name=… plan=… ok`; `denied` or `error: …` otherwise); stdout carries the protocol in stdio mode.
 
 ## CI and deployment
 
 | Workflow | Trigger | Does |
 |---|---|---|
-| `ci.yml` | Every push and pull request | On Ubuntu **and Windows**: Python 3.12 + Node 20, `pip install openpyxl defusedxml "mcp>=2,<3"`, `python tests/test_bep.py`, `python tests/test_mcp.py`, then exports the example plan. |
+| `ci.yml` | Every push and pull request | On Ubuntu **and Windows**: Python 3.12 + Node 20, `pip install openpyxl defusedxml "mcp>=2,<3"`, `python tests/test_bep.py`, `python tests/test_mcp.py`, `python tests/test_mcp_team.py`, then exports the example plan. |
 | `pages.yml` | Push to `master` that changes `app/**`, `tools/build_pages.py` or the workflow itself, or a manual run | Runs `python3 tools/build_pages.py app/index.html _site/index.html`, uploads `_site/` and deploys it to GitHub Pages: <https://tannerpresscorp.github.io/bep-builder/>. |
 | `copilot-setup-steps.yml` | Changes to itself, or a manual run | Prepares Python, Node, openpyxl, defusedxml and `mcp` for GitHub Copilot's coding agent. |
 

@@ -270,20 +270,28 @@ def load(path):
     if os.path.isdir(path):   # checked first: on Windows, opening a folder raises PermissionError
         raise PlanFileError(f"{path} is a folder, not a plan file.")
     try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
+        with open(path, "rb") as fh:
+            raw = fh.read()
     except FileNotFoundError:
         raise PlanFileError(f"No plan file at {path}. Create one with: bep.py init {path}") from None
+    return loads(raw, path)
+
+
+def loads(raw, label):
+    """The normalized plan in a plan file's bytes. `label` names the file in error messages.
+    The MCP server uses this to parse the very bytes it takes a plan's version from."""
+    try:
+        data = json.loads(raw.decode("utf-8"))
     except json.JSONDecodeError as e:
-        raise PlanFileError(f"{path} isn't valid JSON (line {e.lineno}, column {e.colno}: {e.msg}).") from None
+        raise PlanFileError(f"{label} isn't valid JSON (line {e.lineno}, column {e.colno}: {e.msg}).") from None
     except UnicodeDecodeError:
-        raise PlanFileError(f"{path} isn't a text file in UTF-8, so it can't be a plan.") from None
+        raise PlanFileError(f"{label} isn't a text file in UTF-8, so it can't be a plan.") from None
     # Accept the web app's stored document ({"plan": {...}, "updatedBy": ..., ...})
     if isinstance(data, dict) and "plan" in data and "project" not in data:
         data = data["plan"]
     if not isinstance(data, dict):
         kind = {list: "an array", str: "a string", bool: "true or false", type(None): "null"}.get(type(data), "a number")
-        raise PlanFileError(f"{path} isn't a plan: it holds {kind}, not a JSON object.")
+        raise PlanFileError(f"{label} isn't a plan: it holds {kind}, not a JSON object.")
     std = data.get("standards")
     if isinstance(std, dict) and "statusField" not in std and std.get("status") is False:
         std["statusField"] = "none"   # older plans stored only an on/off flag

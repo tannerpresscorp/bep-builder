@@ -9,7 +9,7 @@ Tools for writing a BIM Execution Plan (BEP) under the U.S. National CAD Standar
 - `app/index.html`: the web app. It is a single self-contained page with no build step and no dependencies.
 - `skills/bep-builder-cli/scripts/bep.py`: the command-line tool. It uses only the Python 3.8+ standard library; only `maps-workbook` needs `openpyxl`.
 - `skills/*/`: Claude skills. Each has a `SKILL.md`, its `scripts/`, `references/` and `evals/evals.json`.
-- `servers/bep_mcp/`: an MCP server (stdio, Python 3.10+, `mcp>=2,<3`) that imports `bep.py` and exposes its operations as tools (plus two resources and a `start_bep` prompt) on the plans in `BEP_PLANS_DIR`. Design: `docs/design/mcp-server.md`.
+- `servers/bep_mcp/`: an MCP server (stdio or, as a team server, HTTP; Python 3.10+, `mcp>=2,<3`) that imports `bep.py` and exposes its operations as tools (plus two resources and a `start_bep` prompt) on the plans in `BEP_PLANS_DIR`. Design: `docs/design/mcp-server.md`.
 
 For a longer walkthrough (tutorial, architecture, how-to guides, reference), see `docs/onboarding/`.
 
@@ -19,6 +19,7 @@ For a longer walkthrough (tutorial, architecture, how-to guides, reference), see
 pip install openpyxl defusedxml            # only needed for the maps workbook; defusedxml makes openpyxl read workbooks safely
 python tests/test_bep.py                   # full suite; this is what CI runs
 python tests/test_mcp.py                   # MCP server tests; needs pip install "mcp>=2,<3", skipped without it
+python tests/test_mcp_team.py              # team server tests (HTTP, tokens, grants); same requirement
 python -c "import sys; sys.path.insert(0,'tests'); import test_bep; test_bep.test_examples_in_sync()"   # run one test
 
 cd skills/bep-builder-cli/scripts
@@ -61,6 +62,8 @@ A change to any of these must be made in both languages. The tests check the two
 - Anywhere else it falls back to `localStorage` (key `bep-builder-plan`), and the page shows a banner saying it saves in this browser only, with a link to the team's shared artifact (`HELP.shared`).
 
 **MCP server.** `servers/bep_mcp/bep_mcp/server.py` holds no plan rules of its own: each tool calls a plain function in `bep.py` (`set_path`, `add_row`, `remove_row`, `set_use`, `set_qc`, `check_names`, `convert_layers`, `layer_definition`, `build_doc`), and the `cmd_*` functions wrap the same ones. Put new plan logic in `bep.py` as a function that returns data and raises `ValueError`, then call it from both. Tools name plans by file name only, and `resolve_plan` keeps them inside `BEP_PLANS_DIR`. Writes go through `_edit`, which holds `WRITE_LOCK`. `tests/test_mcp.py` checks every tool against the matching CLI command, byte for byte.
+
+**Team server.** `bep_mcp --http --config PATH` serves the same tools to several people over streamable HTTP with per-user bearer tokens (`team.py`: hashed tokens, `viewer`/`editor` grants by file-name pattern); `create_server(plans_dir, team=None)` is stdio with no checks, `team=config` fails closed. Every tool, resource and prompt must check the name format, then `authorize(...)`, then touch the file, and reads return a `version` that writes can pass as `if_version`; it runs as one process and adds no fields to the plan JSON. `tests/test_mcp_team.py` fails if a tool, resource or prompt has no entry in its access table, so add new ones there. Design: `docs/design/mcp-server.md` §8; setup: `servers/bep_mcp/README.md`.
 
 **Process map.** `processmap.build()` builds one layout. It then outputs either Mermaid, used in the Markdown export and the app, or a tldraw `exec` script. Exchanges are placed on the arrow into the BIM use they feed. That use comes from the exchange's `feeds` field, or failing that from keyword matching against `USE_KEYWORDS`. Exchanges that match nothing are listed in a note rather than dropped.
 
