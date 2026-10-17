@@ -1115,6 +1115,13 @@ async function importApsFile(file, kind) {
     status.textContent = e.message || "Could not read the APS file.";
   }
 }
+function clearApsData() {
+  apsRows = apsFields = apsReport = null;
+  ["#aps-results-file", "#aps-fields-file"].forEach(sel => { const el = $(sel); if (el) el.value = ""; });
+  const status = $("#aps-import-status"), output = $("#aps-report");
+  if (status) status.textContent = "No APS data imported.";
+  if (output) output.innerHTML = "";
+}
 function runChecker() {
   const names = ($("#checker-input").value || "").split(/[\s,]+/).filter(Boolean).slice(0, 300);
   const out = $("#checker-out");
@@ -1373,6 +1380,11 @@ document.addEventListener("input", e => {
   setPath(plan, path, el.value); scheduleSave(path); renderLight();
 });
 document.addEventListener("change", e => {
+  // The APS audit reads files in this browser only and never touches the plan, so read-only viewers can use it too.
+  if (e.target.id === "aps-results-file" || e.target.id === "aps-fields-file") {
+    importApsFile(e.target.files && e.target.files[0], e.target.id === "aps-fields-file" ? "fields" : "results");
+    return;
+  }
   const el = e.target; const path = el.dataset && el.dataset.path; if (!path || !canWrite) return;
   if (el.type === "checkbox") setPath(plan, path, el.checked);
   else if (el.type === "radio") { if (el.checked) setPath(plan, path, el.value); }
@@ -1395,6 +1407,7 @@ document.addEventListener("click", async e => {
     const rows = document.querySelectorAll(`[data-path^="${a.dataset.list}.${list.length - 1}."]`); if (rows[0]) rows[0].focus();
   }
   if (act === "remove" && canWrite) { getPath(plan, a.dataset.list).splice(+a.dataset.index, 1); scheduleSave(a.dataset.list); renderAll(); }
+  if (act === "clear-aps") clearApsData();
   if (act === "check") runChecker();
   if (act === "convert") runConvert();
   if (act === "copy-map") {

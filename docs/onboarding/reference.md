@@ -143,7 +143,7 @@ The `<script>` in `app/index.html` is split by `/* ---------- Name ---------- */
 | ISO 13567 profile | `profileFor`, `isoCheck`, `isoConvert`, `isoDefinition` (port of `iso13567.py`). The same region then holds `runConvert`, `R.qc`, `qcGroup`, `R.deliver` and `R.review` |
 | Level 1 process map | `USE_WORDS`, `buildMap`, `mapToMermaid` (port of `processmap.py`) |
 | Document model → Markdown / HTML | `buildDoc`, `docToMd`, `docToHtml` (port of `build_doc` and its exporters) |
-| NCS name checker | `checkLayer`, `checkSheet` (port of `check_names.py`), then the audit block's code (`parseApsJsonLines`, `apsPropertyName`, `apsFieldLabels`, `summarizeApsProperties`, `apsReportHtml`, `importApsFile`), then `runChecker` |
+| NCS name checker | `checkLayer`, `checkSheet` (port of `check_names.py`), then the audit block's code (`parseApsJsonLines`, `apsPropertyName`, `apsFieldLabels`, `summarizeApsProperties`, `apsReportHtml`, `importApsFile`, `clearApsData`), then `runChecker` |
 | Render | `renderIndex`, `renderSheet`, `renderBanner`, `renderAll`, ... |
 | Saving | `ROW_TEMPLATES`, `normalize()`, `buildPatch`, `overlayEdits`, `scheduleSave`, `flush`, `onRemote` |
 | Events | Click and input handlers |
@@ -153,14 +153,12 @@ The markers are not strict boundaries. Search for a function by name rather than
 
 ### Autodesk Model Properties audit
 
-A block on the Review sheet (`R.review`), below the document preview and above "Start over", headed "Autodesk Model Properties audit". It is meant to summarize results downloaded with Autodesk's APS Model Properties PowerShell examples:
+A block on the Review sheet (`R.review`), below the document preview and above "Start over", headed "Autodesk Model Properties audit". It summarizes results downloaded with Autodesk's APS Model Properties PowerShell examples:
 
-- It has two file inputs: a line-delimited JSON results file (`.jsonl`) and an optional fields metadata file (`.json`) that gives properties readable names.
+- It has two file inputs: a line-delimited JSON results file (`.jsonl`) and an optional fields metadata file (`.json`) that gives properties readable names. Choosing a file calls `importApsFile` from the change handler, and **Clear imported data** (`data-action="clear-aps"`) calls `clearApsData`. Both work for read-only viewers too, because neither touches the plan.
 - `parseApsJsonLines`, `summarizeApsProperties` and `apsReportHtml` count the rows, the viewable objects, how many objects carry each property, and `OBJECT_ADDED`, `OBJECT_CHANGED` and `OBJECT_REMOVED` diff rows.
 - The data stays in the `apsRows`, `apsFields` and `apsReport` variables. It is never written to the plan, to `localStorage` or to the shared store, and the app doesn't sign in to APS.
 - It is JavaScript only, browser only, with no Python counterpart and no test. It doesn't use `aps_model_properties.py`.
-
-At the time of writing, nothing calls `importApsFile`: the two file inputs have no event handler, and the **Clear imported data** button's `data-action="clear-aps"` has no branch in the click handler. Choosing a file leaves the status at "No APS data imported." (seen in headless Chromium).
 
 ## Logic that exists twice
 
