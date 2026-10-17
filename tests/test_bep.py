@@ -697,6 +697,81 @@ def test_app_normalize_matches_cli_on_damaged_plans():
     assert out == cli.normalize(json.loads(json.dumps(damaged)))
 
 
+def test_app_aps_audit_summary_and_import():
+    # Rows and fields in the shapes the APS Model Properties API documents: index rows keep values
+    # under props, a query with projected columns puts them at the top level, and the fields
+    # resource is line-delimited JSON with one field per line.
+    index_rows = "\n".join(json.dumps(r) for r in [
+        {"svf2Id": 1, "views": ["v1"], "props": {"p5eddc473": "Walls", "p1a2b3c4d": 12}},
+        {"svf2Id": 2, "props": {"p5eddc473": "Doors", "p1a2b3c4d": None, "p9f8e7d6c": ""}},   # blank values aren't counted
+    ])
+    query_rows = "\n".join(json.dumps(r) for r in [
+        {"svf2Id": 325, "revitCategory": "Walls", "revitType": "Exterior", "views": ["bfe04eff"]},
+        {"svf2Id": 326, "revitCategory": "Doors", "revitType": None},
+        {"svf2Id": 327, "revitCategory": None, "revitType": ""},          # still counts toward coverage
+    ])
+    fields = '{"key":"p5eddc473","category":"__category__","type":"String","name":"Category","uom":null}\n' \
+             '{"key":"p1a2b3c4d","category":"Dimensions","type":"Double","name":"Area","uom":"m2"}\n'
+    out = _node(f"""
+const fileOf = text => ({{ text: () => Promise.resolve(text) }});
+const slow = () => {{ let done; const p = new Promise(r => {{ done = r; }}); return {{ file: {{ text: () => p }}, done }}; }};
+(async () => {{
+  const index = summarizeApsProperties({json.dumps(index_rows)}, parseApsFields({json.dumps(fields)}));
+  const query = summarizeApsProperties({json.dumps(query_rows)}, null);
+  const late = slow();
+  const first = importApsFile(late.file, "results");                 // still reading when the user clears
+  clearApsData();
+  late.done({json.dumps(index_rows)}); await first;
+  const afterClear = apsReport;
+  const older = slow();
+  const pending = importApsFile(older.file, "results");              // a newer file is chosen before it finishes
+  await importApsFile(fileOf({json.dumps(query_rows)}), "results");
+  older.done({json.dumps(index_rows)}); await pending;
+  const newerWins = {{ rows: apsReport && apsReport.rows, names: apsReport && apsReport.properties.map(p => p.name) }};
+  clearApsData();
+  const results = slow(), fieldsRead = slow();                     // results and fields chosen close together
+  const both = [importApsFile(results.file, "results"), importApsFile(fieldsRead.file, "fields")];
+  results.done({json.dumps(index_rows)}); fieldsRead.done({json.dumps(fields)}); await Promise.all(both);
+  const together = apsReport && apsReport.properties.map(p => p.name);
+  const els = {{}};                                                  // keep elements so the test can read them back
+  document.querySelector = sel => (els[sel] = els[sel] || {{ style: {{}}, value: "chosen" }});
+  await importApsFile(fileOf("not json"), "results");                // a bad replacement keeps the old data
+  const failed = {{ rows: apsReport && apsReport.rows, input: (els["#aps-results-file"] || {{ value: "untouched" }}).value,
+    status: els["#aps-import-status"].textContent }};
+  const reread = slow();
+  const rendering = importApsFile(reread.file, "results");
+  for (const k of Object.keys(els)) delete els[k];                  // the sheet is re-rendered while the file is read
+  reread.done({json.dumps(index_rows)}); await rendering;
+  const rerendered = els["#aps-import-status"] && els["#aps-import-status"].textContent;
+  const aggregate = summarizeApsProperties('{{"rowCount":6528}}', null);   // a $count query's summary record
+  const numeric = summarizeApsProperties('{{"cutLength":1.5,"bbox":{{"min":[0,0,0]}}}}\\n{{"cutLength":2.5}}', null);   // object rows, no views
+  clearApsData(); apsFields = parseApsFields({json.dumps(fields)});
+  const fieldsOnlyStatus = /Fields metadata loaded/.test(R.review());  // the status survives a re-render
+  console.log(JSON.stringify({{ index, query, afterClear, newerWins, together, failed, rerendered, aggregate, numeric, fieldsOnlyStatus }}));
+}})();
+""")
+    if out is None:
+        print("  (skipped: Node.js not installed)")
+        return
+    assert out["index"]["rows"] == 2 and out["index"]["propertyRows"] == 2 and out["index"]["viewable"] == 1
+    assert [(p["name"], p["count"]) for p in out["index"]["properties"]] == [("Category", 2), ("Dimensions · Area", 1)]
+    assert [(p["name"], p["count"]) for p in out["query"]["properties"]] == [("revitCategory", 2), ("revitType", 1)]
+    assert out["query"]["propertyRows"] == 3                          # a row with only blank columns still counts
+    assert [p["coverage"] for p in out["query"]["properties"]] == [67, 33]
+    assert out["afterClear"] is None                                   # a read that finishes after Clear is dropped
+    assert out["newerWins"] == {"rows": 3, "names": ["revitCategory", "revitType"]}   # the newer file wins
+    assert out["rerendered"] == "Loaded 2 APS result rows in this browser."   # written to the current element
+    agg = out["aggregate"]
+    assert agg["aggregates"] == [{"name": "rowCount", "value": 6528}] and agg["properties"] == [] and agg["propertyRows"] == 0
+    num = out["numeric"]                                              # several numeric rows are objects, not aggregates
+    assert num["aggregates"] == [] and [(p["name"], p["count"]) for p in num["properties"]] == [("cutLength", 2)]
+    assert num["viewable"] is None and out["index"]["viewable"] == 1  # no views column: unknown, not 0
+    assert out["fieldsOnlyStatus"] is True
+    assert out["together"] == ["Category", "Dimensions · Area"]       # neither file cancels the other
+    assert out["failed"]["rows"] == 2 and out["failed"]["input"] == ""
+    assert out["failed"]["status"] == "Invalid JSON on line 1. The data loaded before is still shown."
+
+
 def test_pages_build_is_a_full_document():
     sys.path.insert(0, str(ROOT / "tools"))
     import build_pages

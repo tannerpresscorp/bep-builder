@@ -811,7 +811,7 @@ R.review = () => {
       <div class="field"><label for="aps-fields-file">Fields metadata (.json, optional)</label><input id="aps-fields-file" type="file" accept=".json,application/json"></div>
     </div>
     <div class="row-actions"><button class="btn small ghost" data-action="clear-aps">Clear imported data</button></div>
-    <p class="hint" id="aps-import-status" aria-live="polite">${apsRows ? "APS results loaded in this browser." : "No APS data imported."}</p>
+    <p class="hint" id="aps-import-status" aria-live="polite">${apsRows ? "APS results loaded in this browser." : apsFields ? "Fields metadata loaded. Choose an APS results file." : "No APS data imported."}</p>
     <div class="aps-summary" id="aps-report">${apsReport ? apsReportHtml(apsReport) : ""}</div>
   </div>
   ${canWrite ? `<div class="block">
@@ -1046,7 +1046,8 @@ function apsPropertyName(value, fallback) {
   if (typeof value === "string") return value;
   if (!value || typeof value !== "object" || Array.isArray(value)) return fallback;
   const name = value.displayName || value.display_name || value.name || value.label || value.title;
-  const category = value.categoryName || value.category || value.group;
+  let category = value.categoryName || value.category || value.group;
+  if (typeof category === "string" && /^__.*__$/.test(category)) category = "";   // built-in groups such as "__category__"
   return [category, name].filter(x => typeof x === "string" && x.trim()).join(" · ") || fallback;
 }
 function apsFieldLabels(metadata) {
@@ -1071,49 +1072,96 @@ function apsFieldLabels(metadata) {
   visit(metadata);
   return labels;
 }
+// The fields resource is line-delimited JSON (one field per line); a single object or array also works.
+function parseApsFields(text) {
+  const t = String(text ?? "").replace(/^﻿/, "");
+  if (!t.trim()) throw new Error("The fields file is empty.");
+  try { const v = JSON.parse(t); if (v && typeof v === "object") return v; } catch (e) {}
+  try { return parseApsJsonLines(t); }
+  catch (e) { throw new Error(`Fields file: ${e.message}`); }
+}
+// Row keys that describe the object rather than hold a property value. Index and diff rows keep
+// their values under props; a query with projected columns puts them at the top level instead.
+const APS_ROW_META = new Set(["svf2Id", "otgId", "lmvId", "externalId", "lineageId", "databaseId", "views", "props",
+  "propsHash", "propsIgnored", "geomHash", "bbox", "bboxMin", "bboxMax", "type", "changeType", "prev"]);
 function summarizeApsProperties(text, metadata) {
   const rows = parseApsJsonLines(text);
   const labels = apsFieldLabels(metadata);
   const counts = new Map();
   const changes = { OBJECT_ADDED: 0, OBJECT_CHANGED: 0, OBJECT_REMOVED: 0 };
-  let viewable = 0, propertyRows = 0;
+  const aggregates = [];
+  let viewable = 0, propertyRows = 0, hasViews = false;
   rows.forEach(row => {
+    if ("views" in row) hasViews = true;
     if (Array.isArray(row.views) && row.views.length) viewable++;
     if (Object.hasOwn(changes, row.type)) changes[row.type]++;
     const props = row.props && typeof row.props === "object" && !Array.isArray(row.props) ? row.props : null;
-    if (!props) return;
+    const hasValue = v => v !== null && v !== undefined && v !== "";
+    const columns = props ? Object.keys(props) : Object.keys(row).filter(k => !APS_ROW_META.has(k));
+    if (!props && !columns.length) return;                      // no property columns at all: not a property row
+    // A query with aggregate columns ($count, $sum, $avg ...) returns one summary record such as
+    // {"rowCount":6528}: a single row, no object keys, only numbers. Show its values instead of
+    // object coverage. Several numeric-only rows are object rows from a numeric projection.
+    if (!props && rows.length === 1 && Object.keys(row).every(k => !APS_ROW_META.has(k)) && columns.every(k => typeof row[k] === "number")) {
+      columns.forEach(k => aggregates.push({ name: k, value: row[k] }));
+      return;
+    }
+    const keys = columns.filter(k => hasValue((props || row)[k]));
     propertyRows++;
-    Object.keys(props).forEach(key => counts.set(key, (counts.get(key) || 0) + 1));
+    keys.forEach(key => counts.set(key, (counts.get(key) || 0) + 1));
   });
   const properties = [...counts].map(([id, count]) => ({
     id, name: labels[id.toLowerCase()] || id, count, coverage: Math.round(count / (propertyRows || 1) * 100)
   })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  return { rows: rows.length, viewable, propertyRows, properties, changes };
+  // A query that didn't select s.views says nothing about viewability: report it as unknown, not 0.
+  return { rows: rows.length, viewable: hasViews ? viewable : null, propertyRows, properties, changes, aggregates };
 }
 function apsReportHtml(report) {
   const hasDiffs = Object.values(report.changes).some(Boolean);
-  const stats = `<div class="stats"><div><b>${report.rows}</b>${hasDiffs ? "diff rows" : "result rows"}</div><div><b>${report.viewable}</b>viewable objects</div><div><b>${report.properties.length}</b>property fields</div></div>`;
+  const stats = `<div class="stats"><div><b>${report.rows}</b>${hasDiffs ? "diff rows" : "result rows"}</div><div><b>${report.viewable === null ? "—" : report.viewable}</b>viewable objects${report.viewable === null ? " (views not in this output)" : ""}</div><div><b>${report.properties.length}</b>property fields</div></div>`;
   const changes = hasDiffs ? `<p><b>Diff rows:</b> ${Object.entries(report.changes).filter(([, n]) => n).map(([kind, n]) => `${esc(kind.replace("OBJECT_", "").toLowerCase())}: ${n}`).join(" · ")}</p>` : "";
-  const table = report.properties.length ? `<div class="tablewrap"><table><thead><tr><th>Property</th><th>Field ID</th><th>Objects with value</th><th>Coverage</th></tr></thead><tbody>${report.properties.map(p => `<tr><td>${esc(p.name)}</td><td class="mono">${esc(p.id)}</td><td>${p.count} / ${report.propertyRows}</td><td>${p.coverage}%</td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">No object property values were present in these result rows.</p>`;
-  return `${stats}${changes}${table}`;
+  const aggregates = report.aggregates.length ? `<p><b>Aggregate values:</b> ${report.aggregates.map(a => `${esc(a.name)} = ${esc(String(a.value))}`).join(" · ")}</p>` : "";
+  const table = report.properties.length ? `<div class="tablewrap"><table><thead><tr><th>Property</th><th>Field ID</th><th>Objects with value</th><th>Coverage</th></tr></thead><tbody>${report.properties.map(p => `<tr><td>${esc(p.name)}</td><td class="mono">${esc(p.id)}</td><td>${p.count} / ${report.propertyRows}</td><td>${p.coverage}%</td></tr>`).join("")}</tbody></table></div>` : report.aggregates.length ? "" : `<p class="hint">No object property values were present in these result rows.</p>`;
+  return `${stats}${changes}${aggregates}${table}`;
 }
+// One counter per input, bumped by each import into it and by Clear, so a slow file read can't
+// overwrite a newer choice of the same file, while a results file and a fields file chosen close
+// together both still load.
+const apsImportId = { results: 0, fields: 0 };
 async function importApsFile(file, kind) {
   if (!file) return;
-  const status = $("#aps-import-status"), output = $("#aps-report");
+  kind = kind === "fields" ? "fields" : "results";
+  const id = ++apsImportId[kind];
+  let message;
   try {
     const content = await file.text();
+    if (id !== apsImportId[kind]) return;
     let nextRows = apsRows, nextFields = apsFields;
-    if (kind === "fields") {
-      nextFields = JSON.parse(content.replace(/^\uFEFF/, ""));
-      if (!nextFields || typeof nextFields !== "object") throw new Error("The fields file must contain a JSON object or array.");
-    } else nextRows = content;
+    if (kind === "fields") nextFields = parseApsFields(content);
+    else nextRows = content;
     const report = nextRows === null ? null : summarizeApsProperties(nextRows, nextFields);
     apsRows = nextRows; apsFields = nextFields; apsReport = report;
-    status.textContent = report ? `Loaded ${report.rows} APS result rows in this browser.` : "Fields metadata loaded. Choose an APS results file.";
-    output.innerHTML = report ? apsReportHtml(report) : "";
+    message = report ? `Loaded ${report.rows} APS result rows in this browser.` : "Fields metadata loaded. Choose an APS results file.";
   } catch (e) {
-    status.textContent = e.message || "Could not read the APS file.";
+    if (id !== apsImportId[kind]) return;
+    // Keep what was loaded before, but empty the input so it doesn't name the file that failed.
+    const input = $(kind === "fields" ? "#aps-fields-file" : "#aps-results-file");
+    if (input) input.value = "";
+    const kept = kind === "fields" ? apsFields : apsRows;
+    message = `${e.message || "Could not read the APS file."}${kept === null ? "" : " The data loaded before is still shown."}`;
   }
+  // Look the elements up after the read: the sheet may have been re-rendered, or left, while it ran.
+  const status = $("#aps-import-status"), output = $("#aps-report");
+  if (status) status.textContent = message;
+  if (output) output.innerHTML = apsReport ? apsReportHtml(apsReport) : "";
+}
+function clearApsData() {
+  apsImportId.results++; apsImportId.fields++;
+  apsRows = apsFields = apsReport = null;
+  ["#aps-results-file", "#aps-fields-file"].forEach(sel => { const el = $(sel); if (el) el.value = ""; });
+  const status = $("#aps-import-status"), output = $("#aps-report");
+  if (status) status.textContent = "No APS data imported.";
+  if (output) output.innerHTML = "";
 }
 function runChecker() {
   const names = ($("#checker-input").value || "").split(/[\s,]+/).filter(Boolean).slice(0, 300);
@@ -1373,6 +1421,11 @@ document.addEventListener("input", e => {
   setPath(plan, path, el.value); scheduleSave(path); renderLight();
 });
 document.addEventListener("change", e => {
+  // The APS audit reads files in this browser only and never touches the plan, so read-only viewers can use it too.
+  if (e.target.id === "aps-results-file" || e.target.id === "aps-fields-file") {
+    importApsFile(e.target.files && e.target.files[0], e.target.id === "aps-fields-file" ? "fields" : "results");
+    return;
+  }
   const el = e.target; const path = el.dataset && el.dataset.path; if (!path || !canWrite) return;
   if (el.type === "checkbox") setPath(plan, path, el.checked);
   else if (el.type === "radio") { if (el.checked) setPath(plan, path, el.value); }
@@ -1395,6 +1448,7 @@ document.addEventListener("click", async e => {
     const rows = document.querySelectorAll(`[data-path^="${a.dataset.list}.${list.length - 1}."]`); if (rows[0]) rows[0].focus();
   }
   if (act === "remove" && canWrite) { getPath(plan, a.dataset.list).splice(+a.dataset.index, 1); scheduleSave(a.dataset.list); renderAll(); }
+  if (act === "clear-aps") clearApsData();
   if (act === "check") runChecker();
   if (act === "convert") runConvert();
   if (act === "copy-map") {
