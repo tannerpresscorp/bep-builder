@@ -300,6 +300,31 @@ def loads(raw, label):
     return plan
 
 
+def _rewrite_in_place(path, old, text):
+    """Overwrite the plan file that `old` (an os.stat result) describes, and nothing else.
+
+    Opens without following a symlink and checks the open file is the one inspected, so a
+    path swapped for a link meanwhile (possible in a folder other users can write to) can't
+    redirect the write to another file.
+    """
+    data = text.encode("utf-8")   # before truncating: text that can't be encoded leaves the plan as it was
+    try:
+        fd = os.open(path, os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError as e:
+        if e.errno == errno.ELOOP:   # the plan became a symlink since it was checked
+            raise PermissionError(f"{path} changed while saving; not overwriting it") from None
+        raise
+    try:
+        st = os.fstat(fd)
+        if (st.st_dev, st.st_ino) != (old.st_dev, old.st_ino):
+            raise PermissionError(f"{path} changed while saving; not overwriting it")
+        os.ftruncate(fd, 0)
+        while data:
+            data = data[os.write(fd, data):]
+    finally:
+        os.close(fd)
+
+
 def save(path, plan):
     """Write the plan atomically: a crash mid-write leaves the previous file intact."""
     plan["standards"]["status"] = plan["standards"].get("statusField", "status") != "none"
@@ -310,20 +335,50 @@ def save(path, plan):
     folder = os.path.dirname(path)
     if not os.path.isdir(folder):   # else mkstemp's error names its temporary file, not the plan
         raise FileNotFoundError(errno.ENOENT, "No such folder", folder)
-    fd, tmp = tempfile.mkstemp(prefix=".bep-", suffix=".json", dir=folder)
+    text = json.dumps(plan, indent=2, ensure_ascii=False) + "\n"
     try:
-        # mkstemp creates the file owner-only (0600); keep the plan's existing permissions,
-        # or the normal umask-derived mode for a new plan, so shared plans stay readable.
-        try:
-            mode = os.stat(path).st_mode & 0o7777
-        except FileNotFoundError:
+        old = os.stat(path)
+    except FileNotFoundError:
+        old = None
+    fd, tmp = tempfile.mkstemp(prefix=".bep-", suffix=".json", dir=folder)
+    # Change the temporary file through its open descriptor, never by name: in a folder other
+    # users can write to, the name could be swapped for a symlink to some other file.
+    fchmod = getattr(os, "fchmod", None)
+    def set_mode(m):
+        if fchmod:
+            fchmod(fd, m)
+        else:
+            os.chmod(tmp, m)   # Windows before Python 3.13: no fchmod, and no POSIX ownership
+    try:
+        # mkstemp creates the file owner-only (0600) and owned by whoever runs bep; give it the
+        # plan's existing mode, owner and group (or the umask default for a new plan) so a
+        # shared plan stays readable and writable for the same people.
+        if old is None:
             umask = os.umask(0)
             os.umask(umask)
-            mode = 0o666 & ~umask
-        os.chmod(tmp, mode)
+            set_mode(0o666 & ~umask)
+        else:
+            if hasattr(os, "fchown"):
+                st = os.fstat(fd)
+                if (st.st_uid, st.st_gid) != (old.st_uid, old.st_gid):
+                    try:
+                        os.fchown(fd, old.st_uid, old.st_gid)
+                    except PermissionError:
+                        # Only the owner (or root) can keep this plan's ownership on a new file.
+                        # Rewrite it in place instead: not crash-safe, but owner, group and any
+                        # ACLs stay as they were.
+                        os.close(fd)
+                        os.unlink(tmp)
+                        _rewrite_in_place(path, old, text)
+                        return
+            set_mode(old.st_mode & 0o7777)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(plan, fh, indent=2, ensure_ascii=False)
-            fh.write("\n")
+            fh.write(text)
+            fh.flush()
+            mine = os.fstat(fh.fileno())
+            now = os.lstat(tmp)
+            if (now.st_dev, now.st_ino) != (mine.st_dev, mine.st_ino):   # the name was swapped
+                raise PermissionError(f"temporary file for {path} changed while saving; not saving")
         os.replace(tmp, path)
     except BaseException:
         if os.path.exists(tmp):
