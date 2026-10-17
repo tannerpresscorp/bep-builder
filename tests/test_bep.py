@@ -262,6 +262,24 @@ def test_bad_plan_files_give_one_line_errors():
         shutil.rmtree(d)
 
 
+def test_save_keeps_plan_owner_and_group():
+    """A save by another permitted user keeps the plan's owner and group (needs root to set up)."""
+    if os.name != "posix" or os.geteuid() != 0:
+        print("  (skipped: needs root to give the plan another owner)")
+        return
+    d = Path(tempfile.mkdtemp())
+    try:
+        assert bep("init", d / "p.json")[0] == 0
+        os.chown(d / "p.json", 65534, 65534)                         # e.g. a service account
+        os.chmod(d / "p.json", 0o660)
+        assert bep("set", d / "p.json", "project.name", "X")[0] == 0
+        st = (d / "p.json").stat()
+        assert (st.st_uid, st.st_gid, st.st_mode & 0o777) == (65534, 65534, 0o660)
+        assert json.loads((d / "p.json").read_text())["project"]["name"] == "X"
+    finally:
+        shutil.rmtree(d)
+
+
 def test_partial_rows_are_filled_from_templates():
     sys.path.insert(0, str(CLI))
     import bep as cli
@@ -337,10 +355,11 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
   plan = normalize(examplePlan());
   const server = { doc: { plan: clone(plan) }, sets: 0, updates: 0 };
   planRef = {   // db document: set replaces; update merges objects, replaces arrays, needs the doc
+    get: async () => ({ exists: !!server.doc, data: () => clone(server.doc) }),
     set: async d => { server.sets++; server.doc = clone(d); },
     update: async d => { server.updates++; if (!server.doc) throw { code: "invalid_argument" }; merge(server.doc, clone(d)); }
   };
-  mode = "shared"; docExists = true;
+  mode = "shared"; docExists = true; hydrated = true;
   server.doc.plan.collab.cde = "Teammate CDE";          // a teammate saved first
   plan.project.name = "Mine"; scheduleSave("project.name");
   plan.team[1].name = "New name"; scheduleSave("team.1.name");
@@ -460,9 +479,53 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
   latestRemote = { plan: remote }; pendingRemote = true;
   onRemote({ exists: false });
   const staleCleared = latestRemote === null && pendingRemote === false;
+  // Late review findings (PR #4 follow-up).
+  const late = {};
+  const shared = remote;                                       // a populated shared plan
+  // (a) First save after the 6-second timeout loads the shared plan before merging.
+  { const srv = { doc: { plan: clone(shared) } };
+    planRef = { get: async () => ({ exists: true, data: () => clone(srv.doc) }), set: async () => {},
+                update: async d => { merge(srv.doc, clone(d)); } };
+    plan = normalize(blankPlan()); dirty.clear(); fullSave = false; docExists = null; hydrated = false;
+    committed = []; committedFull = false; committedAt = null; mode = "shared"; canWrite = true;
+    plan.project.owner = "Typed early"; scheduleSave("project.owner");
+    clearTimeout(saveTimer); await flush();
+    late.hydrated = plan.goals[0].goal === "Teammate goal" && plan.project.owner === "Typed early"
+      && srv.doc.plan.goals[0].goal === "Teammate goal" && srv.doc.plan.project.owner === "Typed early"; }
+  // (b) A permanent error on the existence check stops retrying and keeps edits in this browser.
+  { planRef = { get: async () => { throw { code: "invalid_argument" }; }, set: async () => {}, update: async () => {} };
+    plan = normalize(blankPlan()); dirty.clear(); fullSave = false; docExists = null; mode = "shared";
+    plan.project.location = "Kept locally"; scheduleSave("project.location");
+    clearTimeout(saveTimer); await flush();
+    late.permanentStops = mode === "local" && saveTimer === null
+      && JSON.parse(__stored[LS_KEY]).project.location === "Kept locally"; }
+  // (c) Browser-only mode ignores later snapshots.
+  { mode = "local"; plan = normalize(blankPlan()); plan.project.name = "Local copy";
+    lastLocalEdit = 0; clearTimeout(saveTimer); saveTimer = null; saving = false;   // idle, so a snapshot would apply
+    onRemote({ exists: true, data: () => ({ plan: clone(shared), clientId: "teammate" }) });
+    late.localIgnores = plan.project.name === "Local copy"; }
+  // (d) A read-only viewer sees the shared values, not edits typed before access resolved.
+  { mode = "readonly"; canWrite = false; plan = normalize(blankPlan()); plan.project.location = "Stray edit";
+    dirty.clear(); dirty.add("project.location"); inFlight = []; committed = []; committedFull = false;
+    applyRemote({ plan: clone(shared) });
+    late.readonlyShared = plan.project.location === shared.project.location;
+    canWrite = true; dirty.clear(); }
+  // (e) A plan that looked missing but was created meanwhile gets a merge, not an overwrite.
+  { const srv = { doc: { plan: clone(shared) }, sets: 0, updates: 0 };
+    planRef = { get: async () => ({ exists: true, data: () => clone(srv.doc) }),
+                set: async d => { srv.sets++; srv.doc = clone(d); },
+                update: async d => { srv.updates++; merge(srv.doc, clone(d)); } };
+    plan = normalize(blankPlan()); dirty.clear(); fullSave = false; docExists = false; hydrated = true; mode = "shared";
+    committed = []; committedFull = false; committedAt = null;
+    plan.project.phase = "Construction"; scheduleSave("project.phase");
+    clearTimeout(saveTimer); await flush();
+    late.recreatedMerges = srv.sets === 0 && srv.updates === 1 && srv.doc.plan.goals[0].goal === "Teammate goal"
+      && srv.doc.plan.project.phase === "Construction"; }
+  mode = "shared"; canWrite = true;
+
   console.log(JSON.stringify({ first, second,
     roots: ["team.1.name", "standards.codes.0.code", "uses.coord.on", "project.name"].map(patchRoot),
-    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared, unknownFirst, connecting, patches, localFallback, committedKept, committedCleared, localDropsStale, fullClears, fullKeptBeforeEcho, fullEchoClears, noLateWrite }));
+    merged: { goal: merged.goals[0].goal, location: merged.project.location }, keptCleared, inFlightKept, staleCleared, unknownFirst, connecting, patches, localFallback, committedKept, committedCleared, localDropsStale, fullClears, fullKeptBeforeEcho, fullEchoClears, noLateWrite, late }));
 })();
 """)
     if out is None:
@@ -480,6 +543,8 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     assert out["unknownFirst"] == {"gets": 1, "sets": 0, "updates": 1,                # merged, not overwritten
                                    "keptGoal": "Teammate goal", "phase": "Construction"}
     assert out["committedKept"] is True and out["committedCleared"] is True and out["localDropsStale"] is True and out["fullClears"] is True
+    assert out["late"] == {"hydrated": True, "permanentStops": True, "localIgnores": True,
+                           "readonlyShared": True, "recreatedMerges": True}
     assert out["fullKeptBeforeEcho"] is True and out["fullEchoClears"] is True and out["noLateWrite"] is True
     assert out["localFallback"] == {"remoteCalls": 0, "dirty": 0, "stored": "Edited during outage"}
     assert out["patches"]["name"] == {"project": {"name": ""}}                # no derived status riding along

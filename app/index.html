@@ -372,6 +372,7 @@ let dirty = new Set(), fullSave = false, docExists = null, latestRemote = null;
 let inFlight = [], inFlightFull = false;   // what the save now in progress is writing
 let committed = [], committedAt = null;    // what the last save wrote, until its echo arrives
 let committedFull = false;                 // the last save wrote the whole plan, until its echo arrives
+let hydrated = false;                      // this browser has loaded the shared plan at least once
 let confirmReset = false, confirmExample = false;
 let apsRows = null, apsFields = null, apsReport = null;
 
@@ -1261,12 +1262,21 @@ async function flush() {
   if (saving) { saveQueued = true; return; }
   if (!fullSave && !dirty.size) { renderStatus(); return; }
   saving = true; renderStatus();
-  if (docExists === null) {
-    // Saving before the first snapshot arrived (slow connection): check once, so an
-    // existing shared plan gets a merge, not a whole-plan overwrite from this browser.
-    try { docExists = (await planRef.get()).exists; }
-    catch (e) { saving = false; saveTimer = setTimeout(flush, 1500 + Math.random() * 1000); renderStatus(); return; }
+  if (docExists === null || (!docExists && !fullSave)) {
+    // Saving before the first snapshot arrived (slow connection), or about to create a plan
+    // that looked missing: read it now, so an existing shared plan is loaded here and gets a
+    // merge rather than a whole-plan overwrite from this browser.
+    let snap;
+    try { snap = await planRef.get(); }
+    catch (e) {
+      saving = false;
+      if (e && e.code === "unavailable") saveTimer = setTimeout(flush, 1500 + Math.random() * 1000);   // transient: retry
+      else goLocal();                                                                                     // permanent: stop retrying, keep edits here
+      renderStatus(); return;
+    }
     if (mode === "local") { saving = false; saveLocal(); renderStatus(); return; }   // store dropped out while checking
+    docExists = snap.exists;
+    if (snap.exists && !hydrated) applyRemote(snap.data());   // show the shared plan, with this browser's edits on top
   }
   plan.standards.status = plan.standards.statusField !== "none";
   const paths = [...dirty], full = fullSave || !docExists;
@@ -1309,12 +1319,16 @@ function applyRemote(d) {
     return;
   }
   // Keep edits not yet saved, edits being saved, and saved edits whose echo hasn't arrived.
-  plan = normalize(overlayEdits(normalize(d.plan), plan, [...dirty, ...inFlight, ...committed]));
+  // A read-only viewer has none to keep.
+  const keep = canWrite ? [...dirty, ...inFlight, ...committed] : [];
+  plan = normalize(overlayEdits(normalize(d.plan), plan, keep));
+  hydrated = true;
   meta = { updatedBy: d.updatedBy, updatedAt: d.updatedAt };
   pendingRemote = false;
   renderAll();
 }
 function onRemote(snap) {
+  if (mode === "local") return;   // browser-only saving: the shared plan no longer applies here
   if (!snap.exists) {
     // The shared plan was deleted: drop any teammate version waiting behind the banner.
     docExists = false; latestRemote = null;
@@ -1331,7 +1345,7 @@ function onRemote(snap) {
     if (committedAt && d.updatedAt >= committedAt) { committed = []; committedFull = false; committedAt = null; }   // our last save is in this snapshot
     // Our own save echoing back. It carries the merged shared plan, so a teammate's change
     // that arrived while we were typing can be shown now that we've stopped.
-    if (pendingRemote && idle) { applyRemote(d); return; }
+    if ((pendingRemote && idle) || !hydrated) { applyRemote(d); return; }
     meta = { updatedBy: d.updatedBy, updatedAt: d.updatedAt }; renderStatus(); return;
   }
   if (idle) applyRemote(d);
@@ -1414,7 +1428,7 @@ renderAll();
   if (!c || !c.use) { useLocal(); return; }
   const [dbNs, userNs, dl] = await Promise.all([c.use("db").catch(() => null), c.use("user").catch(() => null), c.use("downloads").catch(() => null)]);
   downloads = dl; userCap = userNs;
-  if (userNs) { try { myId = await userNs.id(); const w = await userNs.can("data.write"); if (w === false) canWrite = false; } catch (e) {} }
+  if (userNs) { try { myId = await userNs.id(); const w = await userNs.can("data.write"); if (w === false) { canWrite = false; dirty.clear(); fullSave = false; } } catch (e) {} }
   if (!dbNs) { useLocal(); return; }
   db = dbNs; planRef = db.doc("bep/plan");
   mode = canWrite ? "connecting" : "readonly";
