@@ -697,6 +697,49 @@ def test_app_normalize_matches_cli_on_damaged_plans():
     assert out == cli.normalize(json.loads(json.dumps(damaged)))
 
 
+def test_app_aps_audit_summary_and_import():
+    # Rows and fields in the shapes the APS Model Properties API documents: index rows keep values
+    # under props, a query with projected columns puts them at the top level, and the fields
+    # resource is line-delimited JSON with one field per line.
+    index_rows = "\n".join(json.dumps(r) for r in [
+        {"svf2Id": 1, "views": ["v1"], "props": {"p5eddc473": "Walls", "p1a2b3c4d": 12}},
+        {"svf2Id": 2, "props": {"p5eddc473": "Doors"}},
+    ])
+    query_rows = "\n".join(json.dumps(r) for r in [
+        {"svf2Id": 325, "revitCategory": "Walls", "revitType": "Exterior", "views": ["bfe04eff"]},
+        {"svf2Id": 326, "revitCategory": "Doors", "revitType": None},
+    ])
+    fields = '{"key":"p5eddc473","category":"__category__","type":"String","name":"Category","uom":null}\n' \
+             '{"key":"p1a2b3c4d","category":"Dimensions","type":"Double","name":"Area","uom":"m2"}\n'
+    out = _node(f"""
+const fileOf = text => ({{ text: () => Promise.resolve(text) }});
+const slow = () => {{ let done; const p = new Promise(r => {{ done = r; }}); return {{ file: {{ text: () => p }}, done }}; }};
+(async () => {{
+  const index = summarizeApsProperties({json.dumps(index_rows)}, parseApsFields({json.dumps(fields)}));
+  const query = summarizeApsProperties({json.dumps(query_rows)}, null);
+  const late = slow();
+  const first = importApsFile(late.file, "results");                 // still reading when the user clears
+  clearApsData();
+  late.done({json.dumps(index_rows)}); await first;
+  const afterClear = apsReport;
+  const older = slow();
+  const pending = importApsFile(older.file, "results");              // a newer file is chosen before it finishes
+  await importApsFile(fileOf({json.dumps(query_rows)}), "results");
+  older.done({json.dumps(index_rows)}); await pending;
+  console.log(JSON.stringify({{ index, query, afterClear, rows: apsReport && apsReport.rows,
+    names: apsReport && apsReport.properties.map(p => p.name) }}));
+}})();
+""")
+    if out is None:
+        print("  (skipped: Node.js not installed)")
+        return
+    assert out["index"]["rows"] == 2 and out["index"]["propertyRows"] == 2 and out["index"]["viewable"] == 1
+    assert [(p["name"], p["count"]) for p in out["index"]["properties"]] == [("Category", 2), ("Dimensions · Area", 1)]
+    assert [(p["name"], p["count"]) for p in out["query"]["properties"]] == [("revitCategory", 2), ("revitType", 1)]
+    assert out["afterClear"] is None                                   # a read that finishes after Clear is dropped
+    assert out["rows"] == 2 and out["names"] == ["revitCategory", "revitType"]   # the newer file wins
+
+
 def test_pages_build_is_a_full_document():
     sys.path.insert(0, str(ROOT / "tools"))
     import build_pages

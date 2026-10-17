@@ -30,7 +30,7 @@ python tests/test_mcp.py
 python tests/test_mcp_team.py
 ```
 
-You should see 16 `PASS` lines, then 11 more, then 21 more, and no `skipped`. In a Codespace or dev container, all of this is already installed.
+You should see 20 `PASS` lines, then 11 more, then 21 more, and no `skipped` apart from the two save tests that need root, when you aren't root. In a Codespace or dev container, all of this is already installed.
 
 `test_mcp_team.py` also prints log lines from calls it makes on purpose to be refused, such as `Invalid Host header: evil.example.com` and `Tool 'bep_get_status' failed: "Error executing tool bep_get_status: You don't have access to a plan named 'alice-only.json'."`. The tests still pass. Count the `PASS` lines, not the log.
 

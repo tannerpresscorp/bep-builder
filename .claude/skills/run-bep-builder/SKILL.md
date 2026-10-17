@@ -77,7 +77,7 @@ $B export $T/plan.json -o $T/plan.md
 ## Test
 
 ```bash
-python tests/test_bep.py    # 16 PASS; the app halves need node on PATH
+python tests/test_bep.py    # 20 PASS; the app halves need node on PATH
 python tests/test_mcp.py    # 11 PASS; needs the mcp package (run with /tmp/bep-venv/bin/python if it isn't global)
 ```
 

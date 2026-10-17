@@ -1046,7 +1046,8 @@ function apsPropertyName(value, fallback) {
   if (typeof value === "string") return value;
   if (!value || typeof value !== "object" || Array.isArray(value)) return fallback;
   const name = value.displayName || value.display_name || value.name || value.label || value.title;
-  const category = value.categoryName || value.category || value.group;
+  let category = value.categoryName || value.category || value.group;
+  if (typeof category === "string" && /^__.*__$/.test(category)) category = "";   // built-in groups such as "__category__"
   return [category, name].filter(x => typeof x === "string" && x.trim()).join(" · ") || fallback;
 }
 function apsFieldLabels(metadata) {
@@ -1071,6 +1072,18 @@ function apsFieldLabels(metadata) {
   visit(metadata);
   return labels;
 }
+// The fields resource is line-delimited JSON (one field per line); a single object or array also works.
+function parseApsFields(text) {
+  const t = String(text ?? "").replace(/^﻿/, "");
+  if (!t.trim()) throw new Error("The fields file is empty.");
+  try { const v = JSON.parse(t); if (v && typeof v === "object") return v; } catch (e) {}
+  try { return parseApsJsonLines(t); }
+  catch (e) { throw new Error(`Fields file: ${e.message}`); }
+}
+// Row keys that describe the object rather than hold a property value. Index and diff rows keep
+// their values under props; a query with projected columns puts them at the top level instead.
+const APS_ROW_META = new Set(["svf2Id", "otgId", "lmvId", "externalId", "lineageId", "databaseId", "views", "props",
+  "propsHash", "propsIgnored", "geomHash", "bboxMin", "bboxMax", "type", "changeType", "prev"]);
 function summarizeApsProperties(text, metadata) {
   const rows = parseApsJsonLines(text);
   const labels = apsFieldLabels(metadata);
@@ -1081,9 +1094,10 @@ function summarizeApsProperties(text, metadata) {
     if (Array.isArray(row.views) && row.views.length) viewable++;
     if (Object.hasOwn(changes, row.type)) changes[row.type]++;
     const props = row.props && typeof row.props === "object" && !Array.isArray(row.props) ? row.props : null;
-    if (!props) return;
+    const keys = props ? Object.keys(props) : Object.keys(row).filter(k => !APS_ROW_META.has(k) && row[k] !== null && row[k] !== "");
+    if (!props && !keys.length) return;
     propertyRows++;
-    Object.keys(props).forEach(key => counts.set(key, (counts.get(key) || 0) + 1));
+    keys.forEach(key => counts.set(key, (counts.get(key) || 0) + 1));
   });
   const properties = [...counts].map(([id, count]) => ({
     id, name: labels[id.toLowerCase()] || id, count, coverage: Math.round(count / (propertyRows || 1) * 100)
@@ -1097,25 +1111,28 @@ function apsReportHtml(report) {
   const table = report.properties.length ? `<div class="tablewrap"><table><thead><tr><th>Property</th><th>Field ID</th><th>Objects with value</th><th>Coverage</th></tr></thead><tbody>${report.properties.map(p => `<tr><td>${esc(p.name)}</td><td class="mono">${esc(p.id)}</td><td>${p.count} / ${report.propertyRows}</td><td>${p.coverage}%</td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">No object property values were present in these result rows.</p>`;
   return `${stats}${changes}${table}`;
 }
+// Bumped by every import and by Clear, so a slow file read can't overwrite a newer choice.
+let apsImportId = 0;
 async function importApsFile(file, kind) {
   if (!file) return;
+  const id = ++apsImportId;
   const status = $("#aps-import-status"), output = $("#aps-report");
   try {
     const content = await file.text();
+    if (id !== apsImportId) return;
     let nextRows = apsRows, nextFields = apsFields;
-    if (kind === "fields") {
-      nextFields = JSON.parse(content.replace(/^\uFEFF/, ""));
-      if (!nextFields || typeof nextFields !== "object") throw new Error("The fields file must contain a JSON object or array.");
-    } else nextRows = content;
+    if (kind === "fields") nextFields = parseApsFields(content);
+    else nextRows = content;
     const report = nextRows === null ? null : summarizeApsProperties(nextRows, nextFields);
     apsRows = nextRows; apsFields = nextFields; apsReport = report;
     status.textContent = report ? `Loaded ${report.rows} APS result rows in this browser.` : "Fields metadata loaded. Choose an APS results file.";
     output.innerHTML = report ? apsReportHtml(report) : "";
   } catch (e) {
-    status.textContent = e.message || "Could not read the APS file.";
+    if (id === apsImportId) status.textContent = e.message || "Could not read the APS file.";
   }
 }
 function clearApsData() {
+  apsImportId++;
   apsRows = apsFields = apsReport = null;
   ["#aps-results-file", "#aps-fields-file"].forEach(sel => { const el = $(sel); if (el) el.value = ""; });
   const status = $("#aps-import-status"), output = $("#aps-report");
