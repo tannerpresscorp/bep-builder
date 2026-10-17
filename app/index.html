@@ -811,7 +811,7 @@ R.review = () => {
       <div class="field"><label for="aps-fields-file">Fields metadata (.json, optional)</label><input id="aps-fields-file" type="file" accept=".json,application/json"></div>
     </div>
     <div class="row-actions"><button class="btn small ghost" data-action="clear-aps">Clear imported data</button></div>
-    <p class="hint" id="aps-import-status" aria-live="polite">${apsRows ? "APS results loaded in this browser." : "No APS data imported."}</p>
+    <p class="hint" id="aps-import-status" aria-live="polite">${apsRows ? "APS results loaded in this browser." : apsFields ? "Fields metadata loaded. Choose an APS results file." : "No APS data imported."}</p>
     <div class="aps-summary" id="aps-report">${apsReport ? apsReportHtml(apsReport) : ""}</div>
   </div>
   ${canWrite ? `<div class="block">
@@ -1089,6 +1089,7 @@ function summarizeApsProperties(text, metadata) {
   const labels = apsFieldLabels(metadata);
   const counts = new Map();
   const changes = { OBJECT_ADDED: 0, OBJECT_CHANGED: 0, OBJECT_REMOVED: 0 };
+  const aggregates = [];
   let viewable = 0, propertyRows = 0;
   rows.forEach(row => {
     if (Array.isArray(row.views) && row.views.length) viewable++;
@@ -1097,6 +1098,12 @@ function summarizeApsProperties(text, metadata) {
     const hasValue = v => v !== null && v !== undefined && v !== "";
     const columns = props ? Object.keys(props) : Object.keys(row).filter(k => !APS_ROW_META.has(k));
     if (!props && !columns.length) return;                      // no property columns at all: not a property row
+    // A query with aggregate columns ($count, $sum, $avg ...) returns a summary record such as
+    // {"rowCount":6528}: no object keys, only numbers. Show its values instead of object coverage.
+    if (!props && Object.keys(row).every(k => !APS_ROW_META.has(k)) && columns.every(k => typeof row[k] === "number")) {
+      columns.forEach(k => aggregates.push({ name: k, value: row[k] }));
+      return;
+    }
     const keys = columns.filter(k => hasValue((props || row)[k]));
     propertyRows++;
     keys.forEach(key => counts.set(key, (counts.get(key) || 0) + 1));
@@ -1104,14 +1111,15 @@ function summarizeApsProperties(text, metadata) {
   const properties = [...counts].map(([id, count]) => ({
     id, name: labels[id.toLowerCase()] || id, count, coverage: Math.round(count / (propertyRows || 1) * 100)
   })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  return { rows: rows.length, viewable, propertyRows, properties, changes };
+  return { rows: rows.length, viewable, propertyRows, properties, changes, aggregates };
 }
 function apsReportHtml(report) {
   const hasDiffs = Object.values(report.changes).some(Boolean);
   const stats = `<div class="stats"><div><b>${report.rows}</b>${hasDiffs ? "diff rows" : "result rows"}</div><div><b>${report.viewable}</b>viewable objects</div><div><b>${report.properties.length}</b>property fields</div></div>`;
   const changes = hasDiffs ? `<p><b>Diff rows:</b> ${Object.entries(report.changes).filter(([, n]) => n).map(([kind, n]) => `${esc(kind.replace("OBJECT_", "").toLowerCase())}: ${n}`).join(" · ")}</p>` : "";
-  const table = report.properties.length ? `<div class="tablewrap"><table><thead><tr><th>Property</th><th>Field ID</th><th>Objects with value</th><th>Coverage</th></tr></thead><tbody>${report.properties.map(p => `<tr><td>${esc(p.name)}</td><td class="mono">${esc(p.id)}</td><td>${p.count} / ${report.propertyRows}</td><td>${p.coverage}%</td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">No object property values were present in these result rows.</p>`;
-  return `${stats}${changes}${table}`;
+  const aggregates = report.aggregates.length ? `<p><b>Aggregate values:</b> ${report.aggregates.map(a => `${esc(a.name)} = ${esc(String(a.value))}`).join(" · ")}</p>` : "";
+  const table = report.properties.length ? `<div class="tablewrap"><table><thead><tr><th>Property</th><th>Field ID</th><th>Objects with value</th><th>Coverage</th></tr></thead><tbody>${report.properties.map(p => `<tr><td>${esc(p.name)}</td><td class="mono">${esc(p.id)}</td><td>${p.count} / ${report.propertyRows}</td><td>${p.coverage}%</td></tr>`).join("")}</tbody></table></div>` : report.aggregates.length ? "" : `<p class="hint">No object property values were present in these result rows.</p>`;
+  return `${stats}${changes}${aggregates}${table}`;
 }
 // One counter per input, bumped by each import into it and by Clear, so a slow file read can't
 // overwrite a newer choice of the same file, while a results file and a fields file chosen close

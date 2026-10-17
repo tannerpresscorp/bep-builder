@@ -743,7 +743,10 @@ const slow = () => {{ let done; const p = new Promise(r => {{ done = r; }}); ret
   for (const k of Object.keys(els)) delete els[k];                  // the sheet is re-rendered while the file is read
   reread.done({json.dumps(index_rows)}); await rendering;
   const rerendered = els["#aps-import-status"] && els["#aps-import-status"].textContent;
-  console.log(JSON.stringify({{ index, query, afterClear, newerWins, together, failed, rerendered }}));
+  const aggregate = summarizeApsProperties('{{"rowCount":6528}}', null);   // a $count query's summary record
+  clearApsData(); apsFields = parseApsFields({json.dumps(fields)});
+  const fieldsOnlyStatus = /Fields metadata loaded/.test(R.review());  // the status survives a re-render
+  console.log(JSON.stringify({{ index, query, afterClear, newerWins, together, failed, rerendered, aggregate, fieldsOnlyStatus }}));
 }})();
 """)
     if out is None:
@@ -757,6 +760,9 @@ const slow = () => {{ let done; const p = new Promise(r => {{ done = r; }}); ret
     assert out["afterClear"] is None                                   # a read that finishes after Clear is dropped
     assert out["newerWins"] == {"rows": 3, "names": ["revitCategory", "revitType"]}   # the newer file wins
     assert out["rerendered"] == "Loaded 2 APS result rows in this browser."   # written to the current element
+    agg = out["aggregate"]
+    assert agg["aggregates"] == [{"name": "rowCount", "value": 6528}] and agg["properties"] == [] and agg["propertyRows"] == 0
+    assert out["fieldsOnlyStatus"] is True
     assert out["together"] == ["Category", "Dimensions · Area"]       # neither file cancels the other
     assert out["failed"]["rows"] == 2 and out["failed"]["input"] == ""
     assert out["failed"]["status"] == "Invalid JSON on line 1. The data loaded before is still shown."
