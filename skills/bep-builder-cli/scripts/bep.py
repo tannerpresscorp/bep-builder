@@ -341,6 +341,14 @@ def save(path, plan):
     except FileNotFoundError:
         old = None
     fd, tmp = tempfile.mkstemp(prefix=".bep-", suffix=".json", dir=folder)
+    # Change the temporary file through its open descriptor, never by name: in a folder other
+    # users can write to, the name could be swapped for a symlink to some other file.
+    fchmod = getattr(os, "fchmod", None)
+    def set_mode(m):
+        if fchmod:
+            fchmod(fd, m)
+        else:
+            os.chmod(tmp, m)   # Windows before Python 3.13: no fchmod, and no POSIX ownership
     try:
         # mkstemp creates the file owner-only (0600) and owned by whoever runs bep; give it the
         # plan's existing mode, owner and group (or the umask default for a new plan) so a
@@ -348,13 +356,13 @@ def save(path, plan):
         if old is None:
             umask = os.umask(0)
             os.umask(umask)
-            os.chmod(tmp, 0o666 & ~umask)
+            set_mode(0o666 & ~umask)
         else:
-            if hasattr(os, "chown"):
-                st = os.stat(tmp)
+            if hasattr(os, "fchown"):
+                st = os.fstat(fd)
                 if (st.st_uid, st.st_gid) != (old.st_uid, old.st_gid):
                     try:
-                        os.chown(tmp, old.st_uid, old.st_gid)
+                        os.fchown(fd, old.st_uid, old.st_gid)
                     except PermissionError:
                         # Only the owner (or root) can keep this plan's ownership on a new file.
                         # Rewrite it in place instead: not crash-safe, but owner, group and any
@@ -363,9 +371,14 @@ def save(path, plan):
                         os.unlink(tmp)
                         _rewrite_in_place(path, old, text)
                         return
-            os.chmod(tmp, old.st_mode & 0o7777)
+            set_mode(old.st_mode & 0o7777)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(text)
+            fh.flush()
+            mine = os.fstat(fh.fileno())
+            now = os.lstat(tmp)
+            if (now.st_dev, now.st_ino) != (mine.st_dev, mine.st_ino):   # the name was swapped
+                raise PermissionError(f"temporary file for {path} changed while saving; not saving")
         os.replace(tmp, path)
     except BaseException:
         if os.path.exists(tmp):

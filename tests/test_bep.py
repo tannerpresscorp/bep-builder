@@ -315,6 +315,40 @@ def test_in_place_save_refuses_a_swapped_file():
         shutil.rmtree(d)
 
 
+def test_save_ignores_a_swapped_temp_name():
+    """If the temporary file's name is swapped for a symlink, save changes neither the link's
+    target nor the plan (needs root, where a by-name chown would follow the link)."""
+    if os.name != "posix" or os.geteuid() != 0:
+        print("  (skipped: needs root)")
+        return
+    sys.path.insert(0, str(CLI))
+    import bep as cli
+    d = Path(tempfile.mkdtemp())
+    real_mkstemp = cli.tempfile.mkstemp
+    try:
+        plan, victim = d / "p.json", d / "victim.txt"
+        cli.save(str(plan), cli.blank_plan())
+        os.chown(plan, 65534, 65534)                                  # plan owned by a service account
+        before = plan.read_text()
+        victim.write_text("victim")
+        def swapped_mkstemp(*a, **k):                                 # another user swaps the name
+            fd, tmp = real_mkstemp(*a, **k)
+            os.rename(tmp, tmp + ".moved")
+            os.symlink(victim, tmp)
+            return fd, tmp
+        cli.tempfile.mkstemp = swapped_mkstemp
+        try:
+            cli.save(str(plan), cli.example_plan())
+            raise AssertionError("saved through a swapped temporary name")
+        except PermissionError:
+            pass
+        assert (victim.stat().st_uid, victim.read_text()) == (0, "victim")   # target untouched
+        assert plan.read_text() == before and not plan.is_symlink()
+    finally:
+        cli.tempfile.mkstemp = real_mkstemp
+        shutil.rmtree(d)
+
+
 def test_partial_rows_are_filled_from_templates():
     sys.path.insert(0, str(CLI))
     import bep as cli
