@@ -280,6 +280,41 @@ def test_save_keeps_plan_owner_and_group():
         shutil.rmtree(d)
 
 
+def test_in_place_save_refuses_a_swapped_file():
+    """The in-place fallback writes only the file it inspected, never a symlink swapped in."""
+    if os.name != "posix":
+        print("  (skipped: POSIX only)")
+        return
+    sys.path.insert(0, str(CLI))
+    import bep as cli
+    d = Path(tempfile.mkdtemp())
+    try:
+        plan, other = d / "p.json", d / "other.txt"
+        plan.write_text("old")
+        other.write_text("keep me")
+        old = os.stat(plan)
+        cli._rewrite_in_place(str(plan), old, "new")                 # same file: rewritten
+        assert plan.read_text() == "new"
+        plan.rename(d / "moved.json")                                # keep the original's inode in use
+        plan.symlink_to(other)                                       # swapped for a symlink
+        try:
+            cli._rewrite_in_place(str(plan), old, "evil")
+            raise AssertionError("followed a swapped-in symlink")
+        except PermissionError:
+            pass
+        assert other.read_text() == "keep me"
+        plan.unlink()
+        plan.write_text("replacement")                               # swapped for another file
+        try:
+            cli._rewrite_in_place(str(plan), old, "evil")
+            raise AssertionError("wrote to a different file")
+        except PermissionError:
+            pass
+        assert plan.read_text() == "replacement"
+    finally:
+        shutil.rmtree(d)
+
+
 def test_partial_rows_are_filled_from_templates():
     sys.path.insert(0, str(CLI))
     import bep as cli
@@ -521,6 +556,32 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     clearTimeout(saveTimer); await flush();
     late.recreatedMerges = srv.sets === 0 && srv.updates === 1 && srv.doc.plan.goals[0].goal === "Teammate goal"
       && srv.doc.plan.project.phase === "Construction"; }
+  // (f) A plan deleted and then recreated by a teammate is loaded again before the next merge.
+  { const recreated = clone(shared); recreated.project.name = "Recreated plan";
+    planRef = { get: async () => ({ exists: true, data: () => ({ plan: clone(recreated) }) }), set: async () => {},
+                update: async () => {} };
+    mode = "shared"; canWrite = true; hydrated = true; docExists = true; dirty.clear(); fullSave = false;
+    committed = []; committedFull = false; committedAt = null;
+    plan = normalize(blankPlan()); plan.project.name = "Deleted plan";
+    onRemote({ exists: false });
+    plan.project.phase = "Closeout"; scheduleSave("project.phase");
+    clearTimeout(saveTimer); await flush();
+    late.rehydrated = plan.project.name === "Recreated plan" && plan.project.phase === "Closeout"; }
+  // (g) A read-only viewer gets a snapshot straight away, not behind the banner.
+  { mode = "readonly"; canWrite = false; lastLocalEdit = Date.now(); pendingRemote = false;
+    plan = normalize(blankPlan());
+    onRemote({ exists: true, data: () => ({ plan: clone(shared), clientId: "teammate" }) });
+    late.readonlyApplies = !pendingRemote && plan.goals[0].goal === "Teammate goal";
+    canWrite = true; }
+  // (h) Over-budget and unknown store errors are retried; only permanent ones go browser-only.
+  { late.retryRules = [retryDelay("resource_exhausted") >= 8000, retryDelay("unavailable") > 0,
+                       retryDelay("some_new_code") > 0, retryDelay("invalid_argument") === null];
+    planRef = { get: async () => { throw { code: "resource_exhausted" }; }, set: async () => {}, update: async () => {} };
+    mode = "shared"; docExists = null; dirty.clear(); fullSave = false;
+    plan.project.owner = "Retried"; scheduleSave("project.owner");
+    clearTimeout(saveTimer); await flush();
+    late.budgetRetries = mode === "shared" && saveTimer !== null && dirty.has("project.owner");
+    clearTimeout(saveTimer); saveTimer = null; dirty.clear(); }
   mode = "shared"; canWrite = true;
 
   console.log(JSON.stringify({ first, second,
@@ -544,7 +605,9 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
                                    "keptGoal": "Teammate goal", "phase": "Construction"}
     assert out["committedKept"] is True and out["committedCleared"] is True and out["localDropsStale"] is True and out["fullClears"] is True
     assert out["late"] == {"hydrated": True, "permanentStops": True, "localIgnores": True,
-                           "readonlyShared": True, "recreatedMerges": True}
+                           "readonlyShared": True, "recreatedMerges": True, "rehydrated": True,
+                           "readonlyApplies": True, "retryRules": [True, True, True, True],
+                           "budgetRetries": True}
     assert out["fullKeptBeforeEcho"] is True and out["fullEchoClears"] is True and out["noLateWrite"] is True
     assert out["localFallback"] == {"remoteCalls": 0, "dirty": 0, "stored": "Edited during outage"}
     assert out["patches"]["name"] == {"project": {"name": ""}}                # no derived status riding along

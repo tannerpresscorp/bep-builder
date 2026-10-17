@@ -300,6 +300,31 @@ def loads(raw, label):
     return plan
 
 
+def _rewrite_in_place(path, old, text):
+    """Overwrite the plan file that `old` (an os.stat result) describes, and nothing else.
+
+    Opens without following a symlink and checks the open file is the one inspected, so a
+    path swapped for a link meanwhile (possible in a folder other users can write to) can't
+    redirect the write to another file.
+    """
+    try:
+        fd = os.open(path, os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError as e:
+        if e.errno == errno.ELOOP:   # the plan became a symlink since it was checked
+            raise PermissionError(f"{path} changed while saving; not overwriting it") from None
+        raise
+    try:
+        st = os.fstat(fd)
+        if (st.st_dev, st.st_ino) != (old.st_dev, old.st_ino):
+            raise PermissionError(f"{path} changed while saving; not overwriting it")
+        os.ftruncate(fd, 0)
+        data = text.encode("utf-8")
+        while data:
+            data = data[os.write(fd, data):]
+    finally:
+        os.close(fd)
+
+
 def save(path, plan):
     """Write the plan atomically: a crash mid-write leaves the previous file intact."""
     plan["standards"]["status"] = plan["standards"].get("statusField", "status") != "none"
@@ -336,8 +361,7 @@ def save(path, plan):
                         # ACLs stay as they were.
                         os.close(fd)
                         os.unlink(tmp)
-                        with open(path, "w", encoding="utf-8") as fh:
-                            fh.write(text)
+                        _rewrite_in_place(path, old, text)
                         return
             os.chmod(tmp, old.st_mode & 0o7777)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:

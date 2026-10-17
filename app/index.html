@@ -1247,6 +1247,14 @@ function goLocal() {
   mode = "local"; pendingRemote = false; latestRemote = null;
   saveLocal(); renderAll();
 }
+// How long to wait before retrying a store error, or null when retrying can't succeed.
+// Per the db contract: resource_exhausted means slow down, and unknown codes count as unavailable.
+const PERMANENT = new Set(["invalid_argument", "quota_exceeded", "revoked", "not_granted",
+  "capability_disabled", "capability_removed", "transform_error"]);
+function retryDelay(code) {
+  if (PERMANENT.has(code)) return null;
+  return code === "resource_exhausted" ? 8000 + Math.random() * 4000 : 1500 + Math.random() * 1000;
+}
 function scheduleSave(path) {
   lastLocalEdit = Date.now();
   if (path) dirty.add(patchRoot(path)); else fullSave = true;   // no path: the whole plan changed (example, reset)
@@ -1270,8 +1278,9 @@ async function flush() {
     try { snap = await planRef.get(); }
     catch (e) {
       saving = false;
-      if (e && e.code === "unavailable") saveTimer = setTimeout(flush, 1500 + Math.random() * 1000);   // transient: retry
-      else goLocal();                                                                                     // permanent: stop retrying, keep edits here
+      const wait = retryDelay(e && e.code);
+      if (wait != null) saveTimer = setTimeout(flush, wait);   // transient or over budget: retry
+      else goLocal();                                          // permanent: stop retrying, keep edits here
       renderStatus(); return;
     }
     if (mode === "local") { saving = false; saveLocal(); renderStatus(); return; }   // store dropped out while checking
@@ -1297,7 +1306,7 @@ async function flush() {
     if (code === "invalid_argument" && !full) { docExists = false; restore(); saveQueued = true; }   // update needs the doc; it was deleted, so write it whole
     else if (code === "invalid_argument") { canWrite = false; mode = "readonly"; renderAll(); toast("This plan is view-only for you, so changes weren't saved."); }
     else if (code === "quota_exceeded") { restore(); toast("The plan is too large to save. Remove some rows and try again."); }
-    else if (code === "unavailable") { restore(); saveTimer = setTimeout(flush, 1500 + Math.random() * 1000); }
+    else if (retryDelay(code) != null) { restore(); saveTimer = setTimeout(flush, retryDelay(code)); }
     else goLocal();
   }
   saving = false; inFlight = []; inFlightFull = false;
@@ -1331,7 +1340,7 @@ function onRemote(snap) {
   if (mode === "local") return;   // browser-only saving: the shared plan no longer applies here
   if (!snap.exists) {
     // The shared plan was deleted: drop any teammate version waiting behind the banner.
-    docExists = false; latestRemote = null;
+    docExists = false; latestRemote = null; hydrated = false;   // load it again if it's recreated
     if (pendingRemote) { pendingRemote = false; renderBanner(); }
     if (mode === "connecting") { finishConnecting(); renderAll(); }
     return;
@@ -1340,7 +1349,7 @@ function onRemote(snap) {
   const d = snap.data();
   latestRemote = d;
   if (mode === "connecting") finishConnecting();
-  const idle = Date.now() - lastLocalEdit > 4000 && !saveTimer && !saving;
+  const idle = !canWrite || (Date.now() - lastLocalEdit > 4000 && !saveTimer && !saving);   // a viewer has no edits to protect
   if (d.clientId === clientId) {
     if (committedAt && d.updatedAt >= committedAt) { committed = []; committedFull = false; committedAt = null; }   // our last save is in this snapshot
     // Our own save echoing back. It carries the merged shared plan, so a teammate's change
@@ -1428,7 +1437,7 @@ renderAll();
   if (!c || !c.use) { useLocal(); return; }
   const [dbNs, userNs, dl] = await Promise.all([c.use("db").catch(() => null), c.use("user").catch(() => null), c.use("downloads").catch(() => null)]);
   downloads = dl; userCap = userNs;
-  if (userNs) { try { myId = await userNs.id(); const w = await userNs.can("data.write"); if (w === false) { canWrite = false; dirty.clear(); fullSave = false; } } catch (e) {} }
+  if (userNs) { try { myId = await userNs.id(); const w = await userNs.can("data.write"); if (w === false) { canWrite = false; dirty.clear(); fullSave = false; lastLocalEdit = 0; } } catch (e) {} }
   if (!dbNs) { useLocal(); return; }
   db = dbNs; planRef = db.doc("bep/plan");
   mode = canWrite ? "connecting" : "readonly";
