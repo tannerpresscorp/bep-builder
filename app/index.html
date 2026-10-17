@@ -373,6 +373,7 @@ let inFlight = [], inFlightFull = false;   // what the save now in progress is w
 let committed = [], committedAt = null;    // what the last save wrote, until its echo arrives
 let committedFull = false;                 // the last save wrote the whole plan, until its echo arrives
 let hydrated = false;                      // this browser has loaded the shared plan at least once
+let retryAfter = 0;                        // after a store error, no save starts before this time
 let confirmReset = false, confirmExample = false;
 let apsRows = null, apsFields = null, apsReport = null;
 
@@ -1261,7 +1262,7 @@ function scheduleSave(path) {
   if (mode === "local") { saveLocal(); return; }
   if (mode !== "shared") return;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(flush, 900);
+  saveTimer = setTimeout(flush, Math.max(900, retryAfter - Date.now()));   // new edits don't cut a backoff short
   renderStatus();
 }
 async function flush() {
@@ -1279,7 +1280,7 @@ async function flush() {
     catch (e) {
       saving = false;
       const wait = retryDelay(e && e.code);
-      if (wait != null) saveTimer = setTimeout(flush, wait);   // transient or over budget: retry
+      if (wait != null) { retryAfter = Date.now() + wait; saveTimer = setTimeout(flush, wait); }   // transient or over budget: retry
       else goLocal();                                          // permanent: stop retrying, keep edits here
       renderStatus(); return;
     }
@@ -1296,7 +1297,7 @@ async function flush() {
   try {
     if (full) await planRef.set({ plan: clone(plan), ...stamp });
     else await planRef.update({ plan: buildPatch(plan, paths), ...stamp });
-    docExists = true;
+    docExists = true; retryAfter = 0;
     meta = { updatedBy: myId, updatedAt: stamp.updatedAt };
     if (full) { committed = []; committedFull = true; }   // the whole plan is saved; keep it whole until its echo
     else committed = [...new Set([...committed, ...paths])];
@@ -1308,7 +1309,8 @@ async function flush() {
     else if (code === "quota_exceeded") { restore(); toast("The plan is too large to save. Remove some rows and try again."); }
     else if (retryDelay(code) != null) {
       restore(); saveQueued = false;   // queued edits wait for the backoff too, rather than retrying at once
-      clearTimeout(saveTimer); saveTimer = setTimeout(flush, retryDelay(code));
+      const wait = retryDelay(code); retryAfter = Date.now() + wait;
+      clearTimeout(saveTimer); saveTimer = setTimeout(flush, wait);
     }
     else goLocal();
   }

@@ -635,6 +635,12 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     await flush();                                                   // queues behind the pending save
     release(); await pending;
     late.backoffHeld = updates === 1 && saveTimer !== null && dirty.has("project.location");
+    let scheduled = 0; const realTimeout = globalThis.setTimeout;     // an edit during the backoff
+    globalThis.setTimeout = (fn, ms) => { scheduled = ms; return realTimeout(() => {}, 0); };
+    plan.project.phase = "Later edit"; scheduleSave("project.phase");
+    globalThis.setTimeout = realTimeout;
+    late.backoffKept = scheduled > 5000;                              // not the usual 0.9 s
+    if (typeof retryAfter !== "undefined") retryAfter = 0;
     clearTimeout(saveTimer); saveTimer = null; dirty.clear(); }
   // (j) A deletion found by a failed update means the plan is loaded again if it's recreated.
   { planRef = { get: async () => ({ exists: false }), set: async () => {},
@@ -669,7 +675,7 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     assert out["late"] == {"hydrated": True, "permanentStops": True, "localIgnores": True,
                            "readonlyShared": True, "recreatedMerges": True, "rehydrated": True,
                            "readonlyApplies": True, "retryRules": [True, True, True, True],
-                           "budgetRetries": True, "backoffHeld": True, "updateDeletionResets": True}
+                           "budgetRetries": True, "backoffHeld": True, "backoffKept": True, "updateDeletionResets": True}
     assert out["fullKeptBeforeEcho"] is True and out["fullEchoClears"] is True and out["noLateWrite"] is True
     assert out["localFallback"] == {"remoteCalls": 0, "dirty": 0, "stored": "Edited during outage"}
     assert out["patches"]["name"] == {"project": {"name": ""}}                # no derived status riding along
