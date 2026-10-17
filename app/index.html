@@ -1268,6 +1268,9 @@ function scheduleSave(path) {
 async function flush() {
   saveTimer = null;
   if (mode === "local") { saveLocal(); renderStatus(); return; }   // shared store dropped out; a retry lands here
+  if (Date.now() < retryAfter) {                                     // still backing off: whatever timer called, wait
+    clearTimeout(saveTimer); saveTimer = setTimeout(flush, retryAfter - Date.now()); return;
+  }
   if (saving) { saveQueued = true; return; }
   if (!fullSave && !dirty.size) { renderStatus(); return; }
   saving = true; renderStatus();
@@ -1280,7 +1283,7 @@ async function flush() {
     catch (e) {
       saving = false;
       const wait = retryDelay(e && e.code);
-      if (wait != null) { retryAfter = Date.now() + wait; saveTimer = setTimeout(flush, wait); }   // transient or over budget: retry
+      if (wait != null) { retryAfter = Date.now() + wait; clearTimeout(saveTimer); saveTimer = setTimeout(flush, wait); }   // transient or over budget: retry
       else goLocal();                                          // permanent: stop retrying, keep edits here
       renderStatus(); return;
     }
@@ -1346,6 +1349,7 @@ function onRemote(snap) {
   if (!snap.exists) {
     // The shared plan was deleted: drop any teammate version waiting behind the banner.
     docExists = false; latestRemote = null; hydrated = false;   // load it again if it's recreated
+    committed = []; committedFull = false; committedAt = null;   // saves to the deleted plan no longer apply
     if (pendingRemote) { pendingRemote = false; renderBanner(); }
     if (mode === "connecting") { finishConnecting(); renderAll(); }
     return;
