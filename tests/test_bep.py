@@ -271,10 +271,10 @@ def test_save_keeps_plan_owner_and_group():
     try:
         assert bep("init", d / "p.json")[0] == 0
         os.chown(d / "p.json", 65534, 65534)                         # e.g. a service account
-        os.chmod(d / "p.json", 0o660)
+        os.chmod(d / "p.json", 0o700)                                 # owner-only, but not mkstemp's 0o600
         assert bep("set", d / "p.json", "project.name", "X")[0] == 0
         st = (d / "p.json").stat()
-        assert (st.st_uid, st.st_gid, st.st_mode & 0o777) == (65534, 65534, 0o660)
+        assert (st.st_uid, st.st_gid, st.st_mode & 0o777) == (65534, 65534, 0o700)
         assert json.loads((d / "p.json").read_text())["project"]["name"] == "X"
     finally:
         shutil.rmtree(d)
