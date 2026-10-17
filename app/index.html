@@ -1095,9 +1095,9 @@ function summarizeApsProperties(text, metadata) {
     if (Object.hasOwn(changes, row.type)) changes[row.type]++;
     const props = row.props && typeof row.props === "object" && !Array.isArray(row.props) ? row.props : null;
     const hasValue = v => v !== null && v !== undefined && v !== "";
-    const keys = props ? Object.keys(props).filter(k => hasValue(props[k]))
-      : Object.keys(row).filter(k => !APS_ROW_META.has(k) && hasValue(row[k]));
-    if (!props && !keys.length) return;
+    const columns = props ? Object.keys(props) : Object.keys(row).filter(k => !APS_ROW_META.has(k));
+    if (!props && !columns.length) return;                      // no property columns at all: not a property row
+    const keys = columns.filter(k => hasValue((props || row)[k]));
     propertyRows++;
     keys.forEach(key => counts.set(key, (counts.get(key) || 0) + 1));
   });
@@ -1121,7 +1121,7 @@ async function importApsFile(file, kind) {
   if (!file) return;
   kind = kind === "fields" ? "fields" : "results";
   const id = ++apsImportId[kind];
-  const status = $("#aps-import-status"), output = $("#aps-report");
+  let message;
   try {
     const content = await file.text();
     if (id !== apsImportId[kind]) return;
@@ -1130,16 +1130,19 @@ async function importApsFile(file, kind) {
     else nextRows = content;
     const report = nextRows === null ? null : summarizeApsProperties(nextRows, nextFields);
     apsRows = nextRows; apsFields = nextFields; apsReport = report;
-    status.textContent = report ? `Loaded ${report.rows} APS result rows in this browser.` : "Fields metadata loaded. Choose an APS results file.";
-    output.innerHTML = report ? apsReportHtml(report) : "";
+    message = report ? `Loaded ${report.rows} APS result rows in this browser.` : "Fields metadata loaded. Choose an APS results file.";
   } catch (e) {
     if (id !== apsImportId[kind]) return;
     // Keep what was loaded before, but empty the input so it doesn't name the file that failed.
     const input = $(kind === "fields" ? "#aps-fields-file" : "#aps-results-file");
     if (input) input.value = "";
     const kept = kind === "fields" ? apsFields : apsRows;
-    status.textContent = `${e.message || "Could not read the APS file."}${kept === null ? "" : " The data loaded before is still shown."}`;
+    message = `${e.message || "Could not read the APS file."}${kept === null ? "" : " The data loaded before is still shown."}`;
   }
+  // Look the elements up after the read: the sheet may have been re-rendered, or left, while it ran.
+  const status = $("#aps-import-status"), output = $("#aps-report");
+  if (status) status.textContent = message;
+  if (output) output.innerHTML = apsReport ? apsReportHtml(apsReport) : "";
 }
 function clearApsData() {
   apsImportId.results++; apsImportId.fields++;

@@ -708,6 +708,7 @@ def test_app_aps_audit_summary_and_import():
     query_rows = "\n".join(json.dumps(r) for r in [
         {"svf2Id": 325, "revitCategory": "Walls", "revitType": "Exterior", "views": ["bfe04eff"]},
         {"svf2Id": 326, "revitCategory": "Doors", "revitType": None},
+        {"svf2Id": 327, "revitCategory": None, "revitType": ""},          # still counts toward coverage
     ])
     fields = '{"key":"p5eddc473","category":"__category__","type":"String","name":"Category","uom":null}\n' \
              '{"key":"p1a2b3c4d","category":"Dimensions","type":"Double","name":"Area","uom":"m2"}\n'
@@ -737,7 +738,12 @@ const slow = () => {{ let done; const p = new Promise(r => {{ done = r; }}); ret
   await importApsFile(fileOf("not json"), "results");                // a bad replacement keeps the old data
   const failed = {{ rows: apsReport && apsReport.rows, input: (els["#aps-results-file"] || {{ value: "untouched" }}).value,
     status: els["#aps-import-status"].textContent }};
-  console.log(JSON.stringify({{ index, query, afterClear, newerWins, together, failed }}));
+  const reread = slow();
+  const rendering = importApsFile(reread.file, "results");
+  for (const k of Object.keys(els)) delete els[k];                  // the sheet is re-rendered while the file is read
+  reread.done({json.dumps(index_rows)}); await rendering;
+  const rerendered = els["#aps-import-status"] && els["#aps-import-status"].textContent;
+  console.log(JSON.stringify({{ index, query, afterClear, newerWins, together, failed, rerendered }}));
 }})();
 """)
     if out is None:
@@ -746,8 +752,11 @@ const slow = () => {{ let done; const p = new Promise(r => {{ done = r; }}); ret
     assert out["index"]["rows"] == 2 and out["index"]["propertyRows"] == 2 and out["index"]["viewable"] == 1
     assert [(p["name"], p["count"]) for p in out["index"]["properties"]] == [("Category", 2), ("Dimensions · Area", 1)]
     assert [(p["name"], p["count"]) for p in out["query"]["properties"]] == [("revitCategory", 2), ("revitType", 1)]
+    assert out["query"]["propertyRows"] == 3                          # a row with only blank columns still counts
+    assert [p["coverage"] for p in out["query"]["properties"]] == [67, 33]
     assert out["afterClear"] is None                                   # a read that finishes after Clear is dropped
-    assert out["newerWins"] == {"rows": 2, "names": ["revitCategory", "revitType"]}   # the newer file wins
+    assert out["newerWins"] == {"rows": 3, "names": ["revitCategory", "revitType"]}   # the newer file wins
+    assert out["rerendered"] == "Loaded 2 APS result rows in this browser."   # written to the current element
     assert out["together"] == ["Category", "Dimensions · Area"]       # neither file cancels the other
     assert out["failed"]["rows"] == 2 and out["failed"]["input"] == ""
     assert out["failed"]["status"] == "Invalid JSON on line 1. The data loaded before is still shown."
