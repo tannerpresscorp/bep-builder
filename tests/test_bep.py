@@ -703,7 +703,7 @@ def test_app_aps_audit_summary_and_import():
     # resource is line-delimited JSON with one field per line.
     index_rows = "\n".join(json.dumps(r) for r in [
         {"svf2Id": 1, "views": ["v1"], "props": {"p5eddc473": "Walls", "p1a2b3c4d": 12}},
-        {"svf2Id": 2, "props": {"p5eddc473": "Doors"}},
+        {"svf2Id": 2, "props": {"p5eddc473": "Doors", "p1a2b3c4d": None, "p9f8e7d6c": ""}},   # blank values aren't counted
     ])
     query_rows = "\n".join(json.dumps(r) for r in [
         {"svf2Id": 325, "revitCategory": "Walls", "revitType": "Exterior", "views": ["bfe04eff"]},
@@ -726,8 +726,18 @@ const slow = () => {{ let done; const p = new Promise(r => {{ done = r; }}); ret
   const pending = importApsFile(older.file, "results");              // a newer file is chosen before it finishes
   await importApsFile(fileOf({json.dumps(query_rows)}), "results");
   older.done({json.dumps(index_rows)}); await pending;
-  console.log(JSON.stringify({{ index, query, afterClear, rows: apsReport && apsReport.rows,
-    names: apsReport && apsReport.properties.map(p => p.name) }}));
+  const newerWins = {{ rows: apsReport && apsReport.rows, names: apsReport && apsReport.properties.map(p => p.name) }};
+  clearApsData();
+  const results = slow(), fieldsRead = slow();                     // results and fields chosen close together
+  const both = [importApsFile(results.file, "results"), importApsFile(fieldsRead.file, "fields")];
+  results.done({json.dumps(index_rows)}); fieldsRead.done({json.dumps(fields)}); await Promise.all(both);
+  const together = apsReport && apsReport.properties.map(p => p.name);
+  const els = {{}};                                                  // keep elements so the test can read them back
+  document.querySelector = sel => (els[sel] = els[sel] || {{ style: {{}}, value: "chosen" }});
+  await importApsFile(fileOf("not json"), "results");                // a bad replacement keeps the old data
+  const failed = {{ rows: apsReport && apsReport.rows, input: (els["#aps-results-file"] || {{ value: "untouched" }}).value,
+    status: els["#aps-import-status"].textContent }};
+  console.log(JSON.stringify({{ index, query, afterClear, newerWins, together, failed }}));
 }})();
 """)
     if out is None:
@@ -737,7 +747,10 @@ const slow = () => {{ let done; const p = new Promise(r => {{ done = r; }}); ret
     assert [(p["name"], p["count"]) for p in out["index"]["properties"]] == [("Category", 2), ("Dimensions · Area", 1)]
     assert [(p["name"], p["count"]) for p in out["query"]["properties"]] == [("revitCategory", 2), ("revitType", 1)]
     assert out["afterClear"] is None                                   # a read that finishes after Clear is dropped
-    assert out["rows"] == 2 and out["names"] == ["revitCategory", "revitType"]   # the newer file wins
+    assert out["newerWins"] == {"rows": 2, "names": ["revitCategory", "revitType"]}   # the newer file wins
+    assert out["together"] == ["Category", "Dimensions · Area"]       # neither file cancels the other
+    assert out["failed"]["rows"] == 2 and out["failed"]["input"] == ""
+    assert out["failed"]["status"] == "Invalid JSON on line 1. The data loaded before is still shown."
 
 
 def test_pages_build_is_a_full_document():

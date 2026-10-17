@@ -1094,7 +1094,9 @@ function summarizeApsProperties(text, metadata) {
     if (Array.isArray(row.views) && row.views.length) viewable++;
     if (Object.hasOwn(changes, row.type)) changes[row.type]++;
     const props = row.props && typeof row.props === "object" && !Array.isArray(row.props) ? row.props : null;
-    const keys = props ? Object.keys(props) : Object.keys(row).filter(k => !APS_ROW_META.has(k) && row[k] !== null && row[k] !== "");
+    const hasValue = v => v !== null && v !== undefined && v !== "";
+    const keys = props ? Object.keys(props).filter(k => hasValue(props[k]))
+      : Object.keys(row).filter(k => !APS_ROW_META.has(k) && hasValue(row[k]));
     if (!props && !keys.length) return;
     propertyRows++;
     keys.forEach(key => counts.set(key, (counts.get(key) || 0) + 1));
@@ -1111,15 +1113,18 @@ function apsReportHtml(report) {
   const table = report.properties.length ? `<div class="tablewrap"><table><thead><tr><th>Property</th><th>Field ID</th><th>Objects with value</th><th>Coverage</th></tr></thead><tbody>${report.properties.map(p => `<tr><td>${esc(p.name)}</td><td class="mono">${esc(p.id)}</td><td>${p.count} / ${report.propertyRows}</td><td>${p.coverage}%</td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">No object property values were present in these result rows.</p>`;
   return `${stats}${changes}${table}`;
 }
-// Bumped by every import and by Clear, so a slow file read can't overwrite a newer choice.
-let apsImportId = 0;
+// One counter per input, bumped by each import into it and by Clear, so a slow file read can't
+// overwrite a newer choice of the same file, while a results file and a fields file chosen close
+// together both still load.
+const apsImportId = { results: 0, fields: 0 };
 async function importApsFile(file, kind) {
   if (!file) return;
-  const id = ++apsImportId;
+  kind = kind === "fields" ? "fields" : "results";
+  const id = ++apsImportId[kind];
   const status = $("#aps-import-status"), output = $("#aps-report");
   try {
     const content = await file.text();
-    if (id !== apsImportId) return;
+    if (id !== apsImportId[kind]) return;
     let nextRows = apsRows, nextFields = apsFields;
     if (kind === "fields") nextFields = parseApsFields(content);
     else nextRows = content;
@@ -1128,11 +1133,16 @@ async function importApsFile(file, kind) {
     status.textContent = report ? `Loaded ${report.rows} APS result rows in this browser.` : "Fields metadata loaded. Choose an APS results file.";
     output.innerHTML = report ? apsReportHtml(report) : "";
   } catch (e) {
-    if (id === apsImportId) status.textContent = e.message || "Could not read the APS file.";
+    if (id !== apsImportId[kind]) return;
+    // Keep what was loaded before, but empty the input so it doesn't name the file that failed.
+    const input = $(kind === "fields" ? "#aps-fields-file" : "#aps-results-file");
+    if (input) input.value = "";
+    const kept = kind === "fields" ? apsFields : apsRows;
+    status.textContent = `${e.message || "Could not read the APS file."}${kept === null ? "" : " The data loaded before is still shown."}`;
   }
 }
 function clearApsData() {
-  apsImportId++;
+  apsImportId.results++; apsImportId.fields++;
   apsRows = apsFields = apsReport = null;
   ["#aps-results-file", "#aps-fields-file"].forEach(sel => { const el = $(sel); if (el) el.value = ""; });
   const status = $("#aps-import-status"), output = $("#aps-report");

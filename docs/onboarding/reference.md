@@ -159,7 +159,8 @@ A block on the Review sheet (`R.review`), below the document preview and above "
 - `parseApsJsonLines`, `summarizeApsProperties` and `apsReportHtml` count the rows, the viewable objects, how many objects carry each property, and `OBJECT_ADDED`, `OBJECT_CHANGED` and `OBJECT_REMOVED` diff rows.
 - The data stays in the `apsRows`, `apsFields` and `apsReport` variables. It is never written to the plan, to `localStorage` or to the shared store, and the app doesn't sign in to APS.
 - Results can be index or diff rows, whose values sit under `props`, or query output with projected `columns`, whose values sit at the top of each row (`APS_ROW_META` lists the keys that aren't property values). The fields file can be line-delimited JSON, as Autodesk serves it, or a single JSON object or array (`parseApsFields`).
-- Every import takes a number from `apsImportId`, and **Clear** bumps it, so a slow file read that finishes after a newer choice or a Clear is dropped.
+- `apsImportId` keeps one counter per input. Each import takes a number from its input's counter, and **Clear** bumps both, so a slow read that finishes after a newer choice of the same file, or after a Clear, is dropped. A results file and a fields file chosen close together both load.
+- A file that fails to load leaves the data loaded before in place, empties its input so it doesn't name the bad file, and says so in the status line. Blank property values (`null` or `""`) don't count toward "Objects with value".
 - It is JavaScript only, browser only, with no Python counterpart. `test_app_aps_audit_summary_and_import` covers the summary and import code; the event wiring sits below the Events marker, so the tests don't reach it. It doesn't use `aps_model_properties.py`.
 
 ## Logic that exists twice
@@ -203,7 +204,7 @@ Identical file copies between skills: `iso13567.py` (bep-builder-cli and nationa
 | `test_app_downloads_without_the_claude_capability` | The app's downloads work as a plain browser download outside Claude. | Node |
 | `test_app_shared_save_keeps_teammates_changes` | Shared saving sends only changed fields and doesn't overwrite a teammate's edits. | Node |
 | `test_app_normalize_matches_cli_on_damaged_plans` | The app's `normalize()` repairs a damaged plan exactly as Python's does. | Node |
-| `test_app_aps_audit_summary_and_import` | The APS audit summarizes index rows and projected query columns, reads a line-delimited fields file, and drops a file read that finishes after **Clear** or after a newer file is chosen. | Node |
+| `test_app_aps_audit_summary_and_import` | The APS audit summarizes index rows and projected query columns, reads a line-delimited fields file, drops a file read that finishes after **Clear** or after a newer choice of the same file, loads a results file and a fields file chosen together, skips blank values, and keeps the old data when a replacement fails. | Node |
 | `test_pages_build_is_a_full_document` | `tools/build_pages.py` produces a full HTML document, and running it twice changes nothing. | |
 | `test_plan_operations_are_plain_functions` | `add_row`, `remove_row`, `set_use`, `set_qc` and `check_names` return data and raise `ValueError` rather than printing and exiting. | |
 
