@@ -1083,24 +1083,26 @@ function parseApsFields(text) {
 // Row keys that describe the object rather than hold a property value. Index and diff rows keep
 // their values under props; a query with projected columns puts them at the top level instead.
 const APS_ROW_META = new Set(["svf2Id", "otgId", "lmvId", "externalId", "lineageId", "databaseId", "views", "props",
-  "propsHash", "propsIgnored", "geomHash", "bboxMin", "bboxMax", "type", "changeType", "prev"]);
+  "propsHash", "propsIgnored", "geomHash", "bbox", "bboxMin", "bboxMax", "type", "changeType", "prev"]);
 function summarizeApsProperties(text, metadata) {
   const rows = parseApsJsonLines(text);
   const labels = apsFieldLabels(metadata);
   const counts = new Map();
   const changes = { OBJECT_ADDED: 0, OBJECT_CHANGED: 0, OBJECT_REMOVED: 0 };
   const aggregates = [];
-  let viewable = 0, propertyRows = 0;
+  let viewable = 0, propertyRows = 0, hasViews = false;
   rows.forEach(row => {
+    if ("views" in row) hasViews = true;
     if (Array.isArray(row.views) && row.views.length) viewable++;
     if (Object.hasOwn(changes, row.type)) changes[row.type]++;
     const props = row.props && typeof row.props === "object" && !Array.isArray(row.props) ? row.props : null;
     const hasValue = v => v !== null && v !== undefined && v !== "";
     const columns = props ? Object.keys(props) : Object.keys(row).filter(k => !APS_ROW_META.has(k));
     if (!props && !columns.length) return;                      // no property columns at all: not a property row
-    // A query with aggregate columns ($count, $sum, $avg ...) returns a summary record such as
-    // {"rowCount":6528}: no object keys, only numbers. Show its values instead of object coverage.
-    if (!props && Object.keys(row).every(k => !APS_ROW_META.has(k)) && columns.every(k => typeof row[k] === "number")) {
+    // A query with aggregate columns ($count, $sum, $avg ...) returns one summary record such as
+    // {"rowCount":6528}: a single row, no object keys, only numbers. Show its values instead of
+    // object coverage. Several numeric-only rows are object rows from a numeric projection.
+    if (!props && rows.length === 1 && Object.keys(row).every(k => !APS_ROW_META.has(k)) && columns.every(k => typeof row[k] === "number")) {
       columns.forEach(k => aggregates.push({ name: k, value: row[k] }));
       return;
     }
@@ -1111,11 +1113,12 @@ function summarizeApsProperties(text, metadata) {
   const properties = [...counts].map(([id, count]) => ({
     id, name: labels[id.toLowerCase()] || id, count, coverage: Math.round(count / (propertyRows || 1) * 100)
   })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  return { rows: rows.length, viewable, propertyRows, properties, changes, aggregates };
+  // A query that didn't select s.views says nothing about viewability: report it as unknown, not 0.
+  return { rows: rows.length, viewable: hasViews ? viewable : null, propertyRows, properties, changes, aggregates };
 }
 function apsReportHtml(report) {
   const hasDiffs = Object.values(report.changes).some(Boolean);
-  const stats = `<div class="stats"><div><b>${report.rows}</b>${hasDiffs ? "diff rows" : "result rows"}</div><div><b>${report.viewable}</b>viewable objects</div><div><b>${report.properties.length}</b>property fields</div></div>`;
+  const stats = `<div class="stats"><div><b>${report.rows}</b>${hasDiffs ? "diff rows" : "result rows"}</div><div><b>${report.viewable === null ? "—" : report.viewable}</b>viewable objects${report.viewable === null ? " (views not in this output)" : ""}</div><div><b>${report.properties.length}</b>property fields</div></div>`;
   const changes = hasDiffs ? `<p><b>Diff rows:</b> ${Object.entries(report.changes).filter(([, n]) => n).map(([kind, n]) => `${esc(kind.replace("OBJECT_", "").toLowerCase())}: ${n}`).join(" · ")}</p>` : "";
   const aggregates = report.aggregates.length ? `<p><b>Aggregate values:</b> ${report.aggregates.map(a => `${esc(a.name)} = ${esc(String(a.value))}`).join(" · ")}</p>` : "";
   const table = report.properties.length ? `<div class="tablewrap"><table><thead><tr><th>Property</th><th>Field ID</th><th>Objects with value</th><th>Coverage</th></tr></thead><tbody>${report.properties.map(p => `<tr><td>${esc(p.name)}</td><td class="mono">${esc(p.id)}</td><td>${p.count} / ${report.propertyRows}</td><td>${p.coverage}%</td></tr>`).join("")}</tbody></table></div>` : report.aggregates.length ? "" : `<p class="hint">No object property values were present in these result rows.</p>`;

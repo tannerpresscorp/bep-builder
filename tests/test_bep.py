@@ -744,9 +744,10 @@ const slow = () => {{ let done; const p = new Promise(r => {{ done = r; }}); ret
   reread.done({json.dumps(index_rows)}); await rendering;
   const rerendered = els["#aps-import-status"] && els["#aps-import-status"].textContent;
   const aggregate = summarizeApsProperties('{{"rowCount":6528}}', null);   // a $count query's summary record
+  const numeric = summarizeApsProperties('{{"cutLength":1.5,"bbox":{{"min":[0,0,0]}}}}\\n{{"cutLength":2.5}}', null);   // object rows, no views
   clearApsData(); apsFields = parseApsFields({json.dumps(fields)});
   const fieldsOnlyStatus = /Fields metadata loaded/.test(R.review());  // the status survives a re-render
-  console.log(JSON.stringify({{ index, query, afterClear, newerWins, together, failed, rerendered, aggregate, fieldsOnlyStatus }}));
+  console.log(JSON.stringify({{ index, query, afterClear, newerWins, together, failed, rerendered, aggregate, numeric, fieldsOnlyStatus }}));
 }})();
 """)
     if out is None:
@@ -762,6 +763,9 @@ const slow = () => {{ let done; const p = new Promise(r => {{ done = r; }}); ret
     assert out["rerendered"] == "Loaded 2 APS result rows in this browser."   # written to the current element
     agg = out["aggregate"]
     assert agg["aggregates"] == [{"name": "rowCount", "value": 6528}] and agg["properties"] == [] and agg["propertyRows"] == 0
+    num = out["numeric"]                                              # several numeric rows are objects, not aggregates
+    assert num["aggregates"] == [] and [(p["name"], p["count"]) for p in num["properties"]] == [("cutLength", 2)]
+    assert num["viewable"] is None and out["index"]["viewable"] == 1  # no views column: unknown, not 0
     assert out["fieldsOnlyStatus"] is True
     assert out["together"] == ["Category", "Dimensions · Area"]       # neither file cancels the other
     assert out["failed"]["rows"] == 2 and out["failed"]["input"] == ""
