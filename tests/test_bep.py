@@ -311,6 +311,13 @@ def test_in_place_save_refuses_a_swapped_file():
         except PermissionError:
             pass
         assert plan.read_text() == "replacement"
+        old = os.stat(plan)                                          # unencodable text: plan untouched
+        try:
+            cli._rewrite_in_place(str(plan), old, "bad \ud800")
+            raise AssertionError("wrote unencodable text")
+        except UnicodeEncodeError:
+            pass
+        assert plan.read_text() == "replacement"
     finally:
         shutil.rmtree(d)
 
@@ -616,6 +623,27 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     clearTimeout(saveTimer); await flush();
     late.budgetRetries = mode === "shared" && saveTimer !== null && dirty.has("project.owner");
     clearTimeout(saveTimer); saveTimer = null; dirty.clear(); }
+  // (i) A queued save waits for the backoff after resource_exhausted instead of retrying at once.
+  { let updates = 0, release;
+    const gate = new Promise(r => release = r);
+    planRef = { get: async () => ({ exists: true }), set: async () => {},
+                update: async () => { updates++; await gate; throw { code: "resource_exhausted" }; } };
+    mode = "shared"; docExists = true; hydrated = true; dirty.clear(); fullSave = false; saveQueued = false;
+    plan.project.owner = "First"; scheduleSave("project.owner"); clearTimeout(saveTimer);
+    const pending = flush();
+    plan.project.location = "Queued"; scheduleSave("project.location"); clearTimeout(saveTimer);
+    await flush();                                                   // queues behind the pending save
+    release(); await pending;
+    late.backoffHeld = updates === 1 && saveTimer !== null && dirty.has("project.location");
+    clearTimeout(saveTimer); saveTimer = null; dirty.clear(); }
+  // (j) A deletion found by a failed update means the plan is loaded again if it's recreated.
+  { planRef = { get: async () => ({ exists: false }), set: async () => {},
+                update: async () => { throw { code: "invalid_argument" }; } };
+    mode = "shared"; docExists = true; hydrated = true; dirty.clear(); fullSave = false; saveQueued = false;
+    plan.project.phase = "Design"; scheduleSave("project.phase"); clearTimeout(saveTimer);
+    await flush();
+    late.updateDeletionResets = hydrated === false;
+    clearTimeout(saveTimer); saveTimer = null; dirty.clear(); }
   mode = "shared"; canWrite = true;
 
   console.log(JSON.stringify({ first, second,
@@ -641,7 +669,7 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     assert out["late"] == {"hydrated": True, "permanentStops": True, "localIgnores": True,
                            "readonlyShared": True, "recreatedMerges": True, "rehydrated": True,
                            "readonlyApplies": True, "retryRules": [True, True, True, True],
-                           "budgetRetries": True}
+                           "budgetRetries": True, "backoffHeld": True, "updateDeletionResets": True}
     assert out["fullKeptBeforeEcho"] is True and out["fullEchoClears"] is True and out["noLateWrite"] is True
     assert out["localFallback"] == {"remoteCalls": 0, "dirty": 0, "stored": "Edited during outage"}
     assert out["patches"]["name"] == {"project": {"name": ""}}                # no derived status riding along

@@ -1303,10 +1303,13 @@ async function flush() {
     committedAt = stamp.updatedAt;
   } catch (e) {
     const code = e && e.code;
-    if (code === "invalid_argument" && !full) { docExists = false; restore(); saveQueued = true; }   // update needs the doc; it was deleted, so write it whole
+    if (code === "invalid_argument" && !full) { docExists = false; hydrated = false; restore(); saveQueued = true; }   // update needs the doc; it was deleted, so write it whole
     else if (code === "invalid_argument") { canWrite = false; mode = "readonly"; renderAll(); toast("This plan is view-only for you, so changes weren't saved."); }
     else if (code === "quota_exceeded") { restore(); toast("The plan is too large to save. Remove some rows and try again."); }
-    else if (retryDelay(code) != null) { restore(); saveTimer = setTimeout(flush, retryDelay(code)); }
+    else if (retryDelay(code) != null) {
+      restore(); saveQueued = false;   // queued edits wait for the backoff too, rather than retrying at once
+      clearTimeout(saveTimer); saveTimer = setTimeout(flush, retryDelay(code));
+    }
     else goLocal();
   }
   saving = false; inFlight = []; inFlightFull = false;

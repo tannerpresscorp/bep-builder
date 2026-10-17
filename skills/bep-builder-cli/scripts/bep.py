@@ -307,6 +307,7 @@ def _rewrite_in_place(path, old, text):
     path swapped for a link meanwhile (possible in a folder other users can write to) can't
     redirect the write to another file.
     """
+    data = text.encode("utf-8")   # before truncating: text that can't be encoded leaves the plan as it was
     try:
         fd = os.open(path, os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0))
     except OSError as e:
@@ -318,7 +319,6 @@ def _rewrite_in_place(path, old, text):
         if (st.st_dev, st.st_ino) != (old.st_dev, old.st_ino):
             raise PermissionError(f"{path} changed while saving; not overwriting it")
         os.ftruncate(fd, 0)
-        data = text.encode("utf-8")
         while data:
             data = data[os.write(fd, data):]
     finally:
