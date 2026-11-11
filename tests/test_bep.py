@@ -604,7 +604,9 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     mode = "shared"; canWrite = true; hydrated = true; docExists = true; dirty.clear(); fullSave = false;
     committed = []; committedFull = false; committedAt = null;
     plan = normalize(blankPlan()); plan.project.name = "Deleted plan";
+    committed = ["project.owner"]; committedFull = false; committedAt = new Date().toISOString();
     onRemote({ exists: false });
+    late.deletionClearsCommitted = committed.length === 0 && committedAt === null;
     plan.project.phase = "Closeout"; scheduleSave("project.phase");
     clearTimeout(saveTimer); await flush();
     late.rehydrated = plan.project.name === "Recreated plan" && plan.project.phase === "Closeout"; }
@@ -622,7 +624,8 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     plan.project.owner = "Retried"; scheduleSave("project.owner");
     clearTimeout(saveTimer); await flush();
     late.budgetRetries = mode === "shared" && saveTimer !== null && dirty.has("project.owner");
-    clearTimeout(saveTimer); saveTimer = null; dirty.clear(); }
+    clearTimeout(saveTimer); saveTimer = null; dirty.clear();
+    if (typeof retryAfter !== "undefined") retryAfter = 0; }                 // end this scenario's backoff
   // (i) A queued save waits for the backoff after resource_exhausted instead of retrying at once.
   { let updates = 0, release;
     const gate = new Promise(r => release = r);
@@ -640,6 +643,11 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     plan.project.phase = "Later edit"; scheduleSave("project.phase");
     globalThis.setTimeout = realTimeout;
     late.backoffKept = scheduled > 5000;                              // not the usual 0.9 s
+    // A stray timer firing during the backoff doesn't start a save.
+    const before = updates;
+    if (typeof retryAfter !== "undefined") { await flush(); late.strayTimerWaits = updates === before && saveTimer !== null; }
+    else late.strayTimerWaits = false;
+    clearTimeout(saveTimer); saveTimer = null;
     if (typeof retryAfter !== "undefined") retryAfter = 0;
     clearTimeout(saveTimer); saveTimer = null; dirty.clear(); }
   // (j) A deletion found by a failed update means the plan is loaded again if it's recreated.
@@ -675,7 +683,8 @@ const merge = (a, b) => { for (const k in b) { const x = a[k], y = b[k];
     assert out["late"] == {"hydrated": True, "permanentStops": True, "localIgnores": True,
                            "readonlyShared": True, "recreatedMerges": True, "rehydrated": True,
                            "readonlyApplies": True, "retryRules": [True, True, True, True],
-                           "budgetRetries": True, "backoffHeld": True, "backoffKept": True, "updateDeletionResets": True}
+                           "budgetRetries": True, "backoffHeld": True, "backoffKept": True, "updateDeletionResets": True,
+                           "strayTimerWaits": True, "deletionClearsCommitted": True}
     assert out["fullKeptBeforeEcho"] is True and out["fullEchoClears"] is True and out["noLateWrite"] is True
     assert out["localFallback"] == {"remoteCalls": 0, "dirty": 0, "stored": "Edited during outage"}
     assert out["patches"]["name"] == {"project": {"name": ""}}                # no derived status riding along
