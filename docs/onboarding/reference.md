@@ -143,7 +143,7 @@ The `<script>` in `app/index.html` is split by `/* ---------- Name ---------- */
 | ISO 13567 profile | `profileFor`, `isoCheck`, `isoConvert`, `isoDefinition` (port of `iso13567.py`). The same region then holds `runConvert`, `R.qc`, `qcGroup`, `R.deliver` and `R.review` |
 | Level 1 process map | `USE_WORDS`, `buildMap`, `mapToMermaid` (port of `processmap.py`) |
 | Document model → Markdown / HTML | `buildDoc`, `docToMd`, `docToHtml` (port of `build_doc` and its exporters) |
-| NCS name checker | `checkLayer`, `checkSheet` (port of `check_names.py`), then the audit block's code (`parseApsJsonLines`, `apsPropertyName`, `apsFieldLabels`, `summarizeApsProperties`, `apsReportHtml`, `importApsFile`), then `runChecker` |
+| NCS name checker | `checkLayer`, `checkSheet` (port of `check_names.py`), then the audit block's code (`parseApsJsonLines`, `apsPropertyName`, `apsFieldLabels`, `parseApsFields`, `summarizeApsProperties`, `apsReportHtml`, `importApsFile`, `clearApsData`), then `runChecker` |
 | Render | `renderIndex`, `renderSheet`, `renderBanner`, `renderAll`, ... |
 | Saving | `ROW_TEMPLATES`, `normalize()`, `buildPatch`, `overlayEdits`, `scheduleSave`, `flush`, `onRemote` |
 | Events | Click and input handlers |
@@ -153,14 +153,15 @@ The markers are not strict boundaries. Search for a function by name rather than
 
 ### Autodesk Model Properties audit
 
-A block on the Review sheet (`R.review`), below the document preview and above "Start over", headed "Autodesk Model Properties audit". It is meant to summarize results downloaded with Autodesk's APS Model Properties PowerShell examples:
+A block on the Review sheet (`R.review`), below the document preview and above "Start over", headed "Autodesk Model Properties audit". It summarizes results downloaded with Autodesk's APS Model Properties PowerShell examples:
 
-- It has two file inputs: a line-delimited JSON results file (`.jsonl`) and an optional fields metadata file (`.json`) that gives properties readable names.
+- It has two file inputs: a line-delimited JSON results file (`.jsonl`) and an optional fields metadata file (`.json`) that gives properties readable names. Choosing a file calls `importApsFile` from the change handler, and **Clear imported data** (`data-action="clear-aps"`) calls `clearApsData`. Both work for read-only viewers too, because neither touches the plan.
 - `parseApsJsonLines`, `summarizeApsProperties` and `apsReportHtml` count the rows, the viewable objects, how many objects carry each property, and `OBJECT_ADDED`, `OBJECT_CHANGED` and `OBJECT_REMOVED` diff rows.
 - The data stays in the `apsRows`, `apsFields` and `apsReport` variables. It is never written to the plan, to `localStorage` or to the shared store, and the app doesn't sign in to APS.
-- It is JavaScript only, browser only, with no Python counterpart and no test. It doesn't use `aps_model_properties.py`.
-
-At the time of writing, nothing calls `importApsFile`: the two file inputs have no event handler, and the **Clear imported data** button's `data-action="clear-aps"` has no branch in the click handler. Choosing a file leaves the status at "No APS data imported." (seen in headless Chromium).
+- Results can be index or diff rows, whose values sit under `props`, or query output with projected `columns`, whose values sit at the top of each row (`APS_ROW_META` lists the keys that aren't property values). A query with aggregate columns (`$count`, `$sum`, `$avg`) returns a summary record such as `{"rowCount":6528}`; a results file that is a single row with no object keys and only numeric values is shown under "Aggregate values" instead of as an object. A numeric-only projection that returns exactly one object looks the same and is shown the same way. If no row has a `views` column (a query that didn't select `s.views`), viewable objects show as unknown rather than 0. The fields file can be line-delimited JSON, as Autodesk serves it, or a single JSON object or array (`parseApsFields`).
+- `apsImportId` keeps one counter per input. Each import takes a number from its input's counter, and **Clear** bumps both, so a slow read that finishes after a newer choice of the same file, or after a Clear, is dropped. A results file and a fields file chosen close together both load.
+- A file that fails to load leaves the data loaded before in place, empties its input so it doesn't name the bad file, and says so in the status line. Blank property values (`null` or `""`) don't count toward "Objects with value", but a row whose property columns are all blank still counts toward coverage. The status and report are looked up after the file is read, so a re-render during the read doesn't lose the result. Because a query row carries no record of its query, a projected column aliased with one of the `APS_ROW_META` names (such as `type` or `views`) is read as row metadata and not counted.
+- It is JavaScript only, browser only, with no Python counterpart. `test_app_aps_audit_summary_and_import` covers the summary and import code; the event wiring sits below the Events marker, so the tests don't reach it. It doesn't use `aps_model_properties.py`.
 
 ## Logic that exists twice
 
@@ -182,7 +183,7 @@ Identical file copies between skills: `iso13567.py` (bep-builder-cli and nationa
 
 ## Tests
 
-`python tests/test_bep.py` runs every `test_*` function and exits 1 if any fail. There are 16:
+`python tests/test_bep.py` runs every `test_*` function and exits 1 if any fail. There are 20:
 
 | Test | Guards | Needs |
 |---|---|---|
@@ -195,15 +196,19 @@ Identical file copies between skills: `iso13567.py` (bep-builder-cli and nationa
 | `test_app_matches_cli` | The app's process map and ISO 13567 results equal Python's. | Node |
 | `test_set_refuses_sections_and_keeps_file_valid` | `set` rejects sections, lists and negative indexes, and leaves the plan file untouched when it does. | |
 | `test_bad_plan_files_give_one_line_errors` | A missing, broken or wrong-kind plan file, or a missing folder, gives a one-line error and exit code 1, never a traceback. | |
+| `test_save_keeps_plan_owner_and_group` | A save by another permitted user keeps the plan's owner and group. | root, POSIX |
+| `test_in_place_save_refuses_a_swapped_file` | The in-place save fallback writes only the file it inspected, never a symlink swapped in. | POSIX |
+| `test_save_ignores_a_swapped_temp_name` | A temporary file name swapped for a symlink changes neither the link's target nor the plan. | root, POSIX |
 | `test_partial_rows_are_filled_from_templates` | `normalize()` fills rows that are missing fields, so `export` doesn't crash. | |
 | `test_maps_workbook_writes_plan_text_as_text` | Plan text starting with `=` stays text in the workbook. | openpyxl |
 | `test_app_downloads_without_the_claude_capability` | The app's downloads work as a plain browser download outside Claude. | Node |
 | `test_app_shared_save_keeps_teammates_changes` | Shared saving sends only changed fields and doesn't overwrite a teammate's edits. | Node |
 | `test_app_normalize_matches_cli_on_damaged_plans` | The app's `normalize()` repairs a damaged plan exactly as Python's does. | Node |
+| `test_app_aps_audit_summary_and_import` | The APS audit summarizes index rows and projected query columns, reads a line-delimited fields file, drops a file read that finishes after **Clear** or after a newer choice of the same file, loads a results file and a fields file chosen together, skips blank values, and keeps the old data when a replacement fails. | Node |
 | `test_pages_build_is_a_full_document` | `tools/build_pages.py` produces a full HTML document, and running it twice changes nothing. | |
 | `test_plan_operations_are_plain_functions` | `add_row`, `remove_row`, `set_use`, `set_qc` and `check_names` return data and raise `ValueError` rather than printing and exiting. | |
 
-Tests that need Node or openpyxl print `(skipped: ...)` and **pass** when the tool is missing. CI has both, so run them locally with both before pushing.
+Tests that need Node, openpyxl, root or POSIX print `(skipped: ...)` and **pass** when that is missing. CI has both, so run them locally with both before pushing.
 
 `python tests/test_mcp.py` runs the MCP server's 11 tests. They need Python 3.10+ and `pip install "mcp>=2,<3"`, and print `skipped` without the SDK.
 
